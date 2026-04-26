@@ -1,15 +1,14 @@
 services:
-  # ── MongoDB ──────────────────────────────────────────────────────────────────
-  mongo:
+  # ── MongoDB Node 1 (Primary) ────────────────────────────────────────────────
+  mongo1:
     image: mongo:7
-    container_name: electoral_mongo
+    container_name: electoral_mongo1
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
     restart: unless-stopped
     ports:
       - "27017:27017"
-    environment:
-      MONGO_INITDB_DATABASE: electoral_db
     volumes:
-      - mongo_data:/data/db
+      - mongo1_data:/data/db
     networks:
       - electoral_net
     healthcheck:
@@ -18,6 +17,76 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # ── MongoDB Node 2 (Secondary) ──────────────────────────────────────────────
+  mongo2:
+    image: mongo:7
+    container_name: electoral_mongo2
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
+    restart: unless-stopped
+    ports:
+      - "27018:27018"
+    volumes:
+      - mongo2_data:/data/db
+    networks:
+      - electoral_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MongoDB Arbiter ─────────────────────────────────────────────────────────
+  mongo-arbiter:
+    image: mongo:7
+    container_name: electoral_mongo_arbiter
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
+    restart: unless-stopped
+    ports:
+      - "27019:27019"
+    networks:
+      - electoral_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MongoDB Setup (Inicializa el Replica Set) ───────────────────────────────
+  mongo-setup:
+    image: mongo:7
+    container_name: electoral_mongo_setup
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo-arbiter:
+        condition: service_healthy
+    networks:
+      - electoral_net
+    # El script espera a que los nodos estén listos y configura el Replica Set
+    command: >
+      bash -c "
+        mongosh --host mongo1:27017 --eval '
+          try {
+            rs.status();
+            console.log(\"Replica Set ya está inicializado\");
+          } catch(err) {
+            console.log(\"Inicializando Replica Set...\");
+            rs.initiate({
+              _id: \"rs0\",
+              members: [
+                { _id: 0, host: \"mongo1:27017\", priority: 2 },
+                { _id: 1, host: \"mongo2:27018\", priority: 1 },
+                { _id: 2, host: \"mongo-arbiter:27019\", arbiterOnly: true }
+              ]
+            });
+            console.log(\"Replica Set inicializado correctamente.\");
+          }'
+      "
 
   # ── API Go ───────────────────────────────────────────────────────────────────
   api:
@@ -29,18 +98,21 @@ services:
     ports:
       - "8080:8080"
     environment:
-      MONGO_URI: mongodb://mongo:27017
+      # Conexión al Replica Set completo
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27018/?replicaSet=rs0
       DB_NAME: electoral_db
       PORT: "8080"
     depends_on:
-      mongo:
-        condition: service_healthy
+      mongo-setup:
+        condition: service_completed_successfully
     networks:
       - electoral_net
 
 # ── Volúmenes ────────────────────────────────────────────────────────────────
 volumes:
-  mongo_data:
+  mongo1_data:
+    driver: local
+  mongo2_data:
     driver: local
 
 # ── Redes ────────────────────────────────────────────────────────────────────

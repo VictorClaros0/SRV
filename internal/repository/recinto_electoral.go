@@ -67,7 +67,10 @@ func (r *RecintoRepository) Update(ctx context.Context, id bson.ObjectID, rec *m
 	defer cancel()
 
 	update := bson.M{"$set": bson.M{
-		"nombre":                    rec.Nombre,
+		"recintoId":                 rec.RecintoID,
+		"recinto":                   rec.Recinto,
+		"direccion":                 rec.Direccion,
+		"mesas":                     rec.Mesas,
 		"idDistribucionTerritorial": rec.IDDistribucionTerritorial,
 	}}
 	_, err := r.col.UpdateOne(ctx, bson.M{"_id": id}, update)
