@@ -1,0 +1,6 @@
+# .gitignore para el proyecto SRV — API Electoral Go + MongoDB
+.env
+*.exe
+*.log
+/tmp
+/bin

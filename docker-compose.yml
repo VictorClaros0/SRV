@@ -1,0 +1,49 @@
+services:
+  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: electoral_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: electoral_db
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - electoral_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── API Go ───────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: electoral_api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      DB_NAME: electoral_db
+      PORT: "8080"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - electoral_net
+
+# ── Volúmenes ────────────────────────────────────────────────────────────────
+volumes:
+  mongo_data:
+    driver: local
+
+# ── Redes ────────────────────────────────────────────────────────────────────
+networks:
+  electoral_net:
+    driver: bridge
