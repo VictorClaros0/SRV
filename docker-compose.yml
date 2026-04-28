@@ -102,6 +102,15 @@ services:
       MONGO_URI: mongodb://mongo1:27017,mongo2:27018/?replicaSet=rs0
       DB_NAME: electoral_db
       PORT: "8080"
+      # ── Twilio (Sebastian — módulo RRV) ───────────────────────────────────────
+      # Los valores se leen desde el archivo .env en la raíz del proyecto (no commiteado).
+      # Copia .env.example a .env y rellena con las credenciales reales de Twilio.
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
+      TWILIO_VERIFIED_NUMBER: ${TWILIO_VERIFIED_NUMBER}
+      # PINs SMS extra (opcional, separados por coma)
+      # VALID_PINS: "9999,8888"
     depends_on:
       mongo-setup:
         condition: service_completed_successfully

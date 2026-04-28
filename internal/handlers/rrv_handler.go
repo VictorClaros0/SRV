@@ -21,6 +21,12 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
+const (
+	hdrContentType = "Content-Type"
+	mimeXML        = "text/xml"
+	twimlEmpty     = "<Response/>"
+)
+
 // validPINs is the set of accepted SMS security PINs (pre-distributed to mesa officials).
 // Additional PINs can be injected via env var VALID_PINS=pin1,pin2,...
 var validPINs = map[string]bool{
@@ -34,9 +40,10 @@ var validPINs = map[string]bool{
 type RRVHandler struct {
 	actaRepo   *repository.RRVActaRepository
 	eventoRepo *repository.EventoRepository
+	twilio     *services.TwilioClient
 }
 
-func NewRRVHandler(ar *repository.RRVActaRepository, er *repository.EventoRepository) *RRVHandler {
+func NewRRVHandler(ar *repository.RRVActaRepository, er *repository.EventoRepository, tw *services.TwilioClient) *RRVHandler {
 	if extra := os.Getenv("VALID_PINS"); extra != "" {
 		for _, pin := range strings.Split(extra, ",") {
 			if p := strings.TrimSpace(pin); p != "" {
@@ -44,7 +51,7 @@ func NewRRVHandler(ar *repository.RRVActaRepository, er *repository.EventoReposi
 			}
 		}
 	}
-	return &RRVHandler{actaRepo: ar, eventoRepo: er}
+	return &RRVHandler{actaRepo: ar, eventoRepo: er, twilio: tw}
 }
 
 // registrarEvento persists an audit event. Errors are only logged, never propagated.
@@ -265,7 +272,102 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 	h.registrarEvento(saved.ActaID, "ACTA_RECIBIDA", "SMS",
 		bson.M{"acta_id": saved.ActaID, "estado": saved.Estado}, "")
 
+	// Confirmación Twilio (no bloqueante)
+	if h.twilio != nil {
+		go h.twilio.SendConfirmation("", fmt.Sprintf(
+			"✅ SRRV: Acta %s recibida por SMS. Estado: %s", saved.ActaID, saved.Estado,
+		))
+	}
+
 	c.JSON(http.StatusCreated, saved)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/rrv/webhook/sms  — Webhook para Twilio
+// ──────────────────────────────────────────────────────────────────────────────
+// Twilio llama a este endpoint cuando llega un SMS al número virtual.
+// Envía form-encoded: Body=<texto>, From=<numero>, To=<nuestro numero>, etc.
+func (h *RRVHandler) WebhookSMS(c *gin.Context) {
+	mensaje := strings.TrimSpace(c.PostForm("Body"))
+	from := c.PostForm("From")
+
+	confirm, err := h.procesarWebhookSMS(c.Request.Context(), mensaje, from)
+	if err != nil {
+		log.Printf("⚠️  Webhook SMS: %v", err)
+	}
+	if h.twilio != nil && confirm != "" {
+		go h.twilio.SendConfirmation(from, confirm)
+	}
+	twimlOK(c)
+}
+
+// procesarWebhookSMS contiene la lógica de negocio del webhook: valida, deduplica y persiste.
+// Devuelve el mensaje de confirmación a enviar (vacío si no aplica) y un error interno si lo hay.
+func (h *RRVHandler) procesarWebhookSMS(ctx context.Context, mensaje, from string) (string, error) {
+	if mensaje == "" {
+		return "", nil
+	}
+
+	msgHash := services.HashBytes([]byte(mensaje))
+	dupMsg, err := h.actaRepo.ExistsByHash(ctx, msgHash)
+	if err != nil {
+		return "", fmt.Errorf("verificando hash: %w", err)
+	}
+	if dupMsg {
+		h.registrarEvento("desconocido", "DUPLICADO_SMS", "TWILIO_WEBHOOK",
+			bson.M{"hash": msgHash, "from": from}, "mensaje SMS duplicado")
+		return "⚠️ SRRV: Este mensaje de acta ya fue procesado anteriormente.", nil
+	}
+
+	acta, parseErr := parseSMS(mensaje)
+	if parseErr != "" {
+		h.registrarEvento("desconocido", "SMS_INVALIDO", "TWILIO_WEBHOOK",
+			bson.M{"mensaje": mensaje, "from": from, "detalle": parseErr}, parseErr)
+		return fmt.Sprintf("❌ SRRV: Formato inválido — %s", parseErr), nil
+	}
+	acta.HashOrigen = msgHash
+	acta.FechaRecepcion = time.Now()
+
+	if !validPINs[extractField(mensaje, "PIN")] {
+		h.registrarEvento(acta.ActaID, "PIN_INVALIDO", "TWILIO_WEBHOOK",
+			bson.M{"acta_id": acta.ActaID, "from": from}, "PIN inválido")
+		return "❌ SRRV: PIN de seguridad inválido. Acta rechazada.", nil
+	}
+
+	dupID, err := h.actaRepo.ExistsByActaID(ctx, acta.ActaID)
+	if err != nil {
+		return "", fmt.Errorf("verificando acta_id: %w", err)
+	}
+	if dupID {
+		h.registrarEvento(acta.ActaID, "DUPLICADO_ACTA_ID", "TWILIO_WEBHOOK",
+			bson.M{"acta_id": acta.ActaID, "from": from}, "acta_id ya existe")
+		return fmt.Sprintf("⚠️ SRRV: Acta %s ya fue registrada.", acta.ActaID), nil
+	}
+
+	if msg := validarAritmetica(acta); msg != "" {
+		acta.Estado = "INCONSISTENTE"
+		h.registrarEvento(acta.ActaID, "INCONSISTENCIA_ARITMETICA", "TWILIO_WEBHOOK",
+			bson.M{"acta_id": acta.ActaID, "detalle": msg, "from": from}, msg)
+	} else {
+		acta.Estado = "PROCESADA"
+	}
+
+	saved, err := h.actaRepo.Create(ctx, acta)
+	if err != nil {
+		return "", fmt.Errorf("guardando acta: %w", err)
+	}
+
+	h.registrarEvento(saved.ActaID, "ACTA_RECIBIDA", "TWILIO_WEBHOOK",
+		bson.M{"acta_id": saved.ActaID, "estado": saved.Estado, "from": from}, "")
+
+	return fmt.Sprintf("✅ SRRV: Acta %s registrada. Estado: %s. Total votos: %d",
+		saved.ActaID, saved.Estado, saved.TotalVotos), nil
+}
+
+// twimlOK responde con TwiML vacío — Twilio requiere 200 con XML aunque no se quiera responder con otro SMS.
+func twimlOK(c *gin.Context) {
+	c.Header(hdrContentType, mimeXML)
+	c.String(http.StatusOK, twimlEmpty)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

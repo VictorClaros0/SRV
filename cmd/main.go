@@ -10,6 +10,7 @@ import (
 	"srrv/internal/database"
 	"srrv/internal/handlers"
 	"srrv/internal/repository"
+	"srrv/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -40,7 +41,8 @@ func main() {
 	recintoH      := handlers.NewRecintoHandler(recintoRepo)
 	mesaH         := handlers.NewMesaHandler(mesaRepo)
 	actaH         := handlers.NewActaHandler(actaRepo)
-	rrvH          := handlers.NewRRVHandler(rrvActaRepo, eventoRepo)
+	twilioClient  := services.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioMessagingSID, cfg.TwilioFromNumber)
+	rrvH          := handlers.NewRRVHandler(rrvActaRepo, eventoRepo, twilioClient)
 
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := gin.Default()
@@ -110,6 +112,7 @@ func main() {
 	{
 		rrv.POST("/actas/upload",    rrvH.Upload)
 		rrv.POST("/sms",             rrvH.SMS)
+		rrv.POST("/webhook/sms",     rrvH.WebhookSMS) // Twilio envía aquí cuando llega un SMS al número virtual
 		rrv.GET("/actas",            rrvH.GetAll)
 		rrv.GET("/actas/:acta_id",   rrvH.GetByID)
 		rrv.GET("/eventos",          rrvH.GetEventos)

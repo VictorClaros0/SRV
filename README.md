@@ -110,7 +110,8 @@ c:\Practica 4\
 │   │   └── evento.go                      # Modelo Evento/audit (Sebastian)
 │   ├── repository/          # Capa de acceso a MongoDB
 │   ├── handlers/            # Controladores HTTP (Gin)
-│   └── services/ocr.go      # Simulación determinística de OCR
+│   ├── services/ocr.go      # Simulación determinística de OCR
+│   └── services/twilio.go  # Cliente Twilio para confirmaciones SMS
 ├── internal/data/           # CSV de datos electorales
 ├── Dockerfile
 └── docker-compose.yml
@@ -137,7 +138,8 @@ Todos los grupos también tienen POST / PUT `/:id` / DELETE `/:id`.
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/api/rrv/actas/upload` | Subir imagen/PDF de acta (multipart) |
-| POST | `/api/rrv/sms` | Recibir acta por SMS (JSON) |
+| POST | `/api/rrv/sms` | Recibir acta por SMS vía JSON (pruebas directas) |
+| POST | `/api/rrv/webhook/sms` | **Webhook Twilio** — Twilio llama aquí cuando llega un SMS real |
 | GET | `/api/rrv/actas` | Listar todas las actas RRV |
 | GET | `/api/rrv/actas/:acta_id` | Obtener acta RRV por ID |
 | GET | `/api/rrv/eventos` | Audit log de eventos |
@@ -169,6 +171,80 @@ curl -X POST http://localhost:8080/api/rrv/sms \
 **Formato SMS:**
 ```
 ACTA:<id>|DEP:<departamento>|MUN:<municipio>|REC:<recinto>|MESA:<mesa>|C1:<votos>|C2:<votos>|...|NULOS:<n>|BLANCOS:<b>|TOTAL:<t>|PIN:<pin>
+```
+
+---
+
+## Integración Twilio (SMS real)
+
+### Credenciales configuradas
+
+Las credenciales ya están cargadas en `docker-compose.yml`. No hay que tocar nada para que funcionen al levantar con `docker compose up`.
+
+| Variable | Dónde obtenerla |
+|---|---|
+| `TWILIO_ACCOUNT_SID` | [console.twilio.com](https://console.twilio.com) → Account Info |
+| `TWILIO_AUTH_TOKEN` | [console.twilio.com](https://console.twilio.com) → Account Info |
+| `TWILIO_MESSAGING_SERVICE_SID` | Console → Messaging → Services |
+| `TWILIO_VERIFIED_NUMBER` | Console → Phone Numbers → Verified Caller IDs |
+
+Las credenciales reales se guardan en el archivo `.env` (no commiteado, ver `.env.example`).
+El equipo comparte las credenciales por canal privado.
+
+> **Nota cuenta trial:** Twilio trial solo permite enviar SMS a números verificados en la consola.
+> El sistema envía todas las confirmaciones al número `+59162665211`.
+> En producción (cuenta pagada) se envían al número real del remitente.
+
+### Cómo funciona el flujo SMS real
+
+```
+Fiscal de mesa                Twilio                     SRRV API
+     │                           │                           │
+     │── SMS al +1XXXXXXXXX ───► │                           │
+     │   "ACTA:001|...|PIN:1234" │                           │
+     │                           │── POST /api/rrv/webhook ─►│
+     │                           │   Body=ACTA:001|...        │── valida PIN
+     │                           │   From=+591XXXXXXX         │── detecta duplicados
+     │                           │                            │── valida aritmética
+     │                           │                            │── guarda en MongoDB
+     │◄── SMS confirmación ──────│◄─ Twilio.SendConfirmation  │
+     │   "✅ Acta 001 registrada" │                           │
+```
+
+### Configurar el webhook en Twilio (para SMS reales entrantes)
+
+1. Ir a [console.twilio.com](https://console.twilio.com) → **Phone Numbers** → tu número virtual
+2. En **Messaging Configuration** → **A Message Comes In** → seleccionar **Webhook**
+3. URL: `http://<tu-ip-publica>:8080/api/rrv/webhook/sms`
+4. Método: **HTTP POST**
+
+Para exponer el servidor local en pruebas usar **ngrok**:
+```bash
+ngrok http 8080
+# Copia la URL https://xxxx.ngrok.io y ponla en Twilio como webhook
+```
+
+### Enviar SMS de prueba manualmente (sin Twilio entrante)
+
+```bash
+# Simula exactamente lo que Twilio enviaría al webhook
+curl -X POST http://localhost:8080/api/rrv/webhook/sms \
+  -d "Body=ACTA:ACTA-TW-001|DEP:Cochabamba|MUN:Cochabamba|REC:Escuela Central|MESA:005|C1:80|C2:60|C3:20|NULOS:3|BLANCOS:2|TOTAL:165|PIN:1234" \
+  -d "From=%2B59176131645" \
+  -d "To=%2B19XXXXXXXX"
+```
+
+La respuesta será `<Response/>` (TwiML vacío) y el sistema enviará confirmación al número verificado.
+
+### Enviar SMS desde Twilio hacia un número (prueba de envío)
+
+```bash
+# Reemplaza con tus credenciales del .env
+curl -X POST https://api.twilio.com/2010-04-01/Accounts/$TWILIO_ACCOUNT_SID/Messages.json \
+  -u "$TWILIO_ACCOUNT_SID:$TWILIO_AUTH_TOKEN" \
+  --data-urlencode "To=$TWILIO_VERIFIED_NUMBER" \
+  --data-urlencode "MessagingServiceSid=$TWILIO_MESSAGING_SERVICE_SID" \
+  --data-urlencode "Body=Prueba SRRV: sistema funcionando correctamente"
 ```
 
 ---
