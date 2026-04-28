@@ -1,12 +1,14 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"srrv/internal/config"
+	"srrv/internal/data"
 	"srrv/internal/database"
 	"srrv/internal/handlers"
 	"srrv/internal/repository"
@@ -16,6 +18,11 @@ import (
 )
 
 func main() {
+	// ── Flags ─────────────────────────────────────────────────────────────────
+	seedFlag := flag.Bool("seed", false, "Poblar la base de datos con datos iniciales desde CSV y salir")
+	seedPath := flag.String("seed-path", "internal/data", "Ruta a la carpeta con los archivos CSV")
+	flag.Parse()
+
 	// ── Configuración ─────────────────────────────────────────────────────────
 	cfg := config.Load()
 
@@ -27,6 +34,16 @@ func main() {
 	defer database.Disconnect(client)
 
 	db := client.Database(cfg.DBName)
+
+	// ── Seed (opcional) ───────────────────────────────────────────────────────
+	if *seedFlag {
+		log.Println("🌱 Ejecutando seed de la base de datos...")
+		if err := data.SeedDatabase(db, *seedPath); err != nil {
+			log.Fatalf("❌ Error al hacer seed: %v", err)
+		}
+		log.Println("✅ Seed completado. Saliendo...")
+		return
+	}
 
 	// ── Repositories ──────────────────────────────────────────────────────────
 	distribucionRepo := repository.NewDistribucionRepository(db)

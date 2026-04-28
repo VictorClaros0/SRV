@@ -25,6 +25,9 @@ WORKDIR /app
 # Copiar solo el binario compilado
 COPY --from=builder /app/api .
 
+# Copiar archivos CSV para el seed de la base de datos
+COPY --from=builder /app/internal/data/*.csv ./internal/data/
+
 EXPOSE 8080
 
 ENTRYPOINT ["/app/api"]
