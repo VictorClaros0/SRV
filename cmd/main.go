@@ -32,15 +32,30 @@ func main() {
 	recintoRepo      := repository.NewRecintoRepository(db)
 	mesaRepo         := repository.NewMesaRepository(db)
 	actaRepo         := repository.NewActaRepository(db)
+	rrvActaRepo      := repository.NewRRVActaRepository(db)
+	eventoRepo       := repository.NewEventoRepository(db)
 
 	// ── Handlers ──────────────────────────────────────────────────────────────
 	distribucionH := handlers.NewDistribucionHandler(distribucionRepo)
 	recintoH      := handlers.NewRecintoHandler(recintoRepo)
 	mesaH         := handlers.NewMesaHandler(mesaRepo)
 	actaH         := handlers.NewActaHandler(actaRepo)
+	rrvH          := handlers.NewRRVHandler(rrvActaRepo, eventoRepo)
 
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := gin.Default()
+
+	// CORS permisivo para el dashboard de Pablo
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type,Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -88,6 +103,16 @@ func main() {
 			acta.PUT("/:id",  actaH.Update)
 			acta.DELETE("/:id", actaH.Delete)
 		}
+	}
+
+	// ── RRV (Sebastian) ───────────────────────────────────────────────────────
+	rrv := r.Group("/api/rrv")
+	{
+		rrv.POST("/actas/upload",    rrvH.Upload)
+		rrv.POST("/sms",             rrvH.SMS)
+		rrv.GET("/actas",            rrvH.GetAll)
+		rrv.GET("/actas/:acta_id",   rrvH.GetByID)
+		rrv.GET("/eventos",          rrvH.GetEventos)
 	}
 
 	// ── Arrancar servidor ─────────────────────────────────────────────────────
