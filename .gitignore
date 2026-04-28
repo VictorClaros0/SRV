@@ -1,0 +1,4 @@
+.env
+*.exe
+/backend/votos-api
+/backend/votos-api.exe

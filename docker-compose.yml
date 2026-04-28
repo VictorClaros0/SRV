@@ -1,0 +1,110 @@
+# PostgreSQL HA: primary + standby (repmgr) + Pgpool-II
+# La API se conecta solo a pgpool; ante caída del primary, repmgr promueve el standby.
+
+services:
+  pg-0:
+    image: docker.io/bitnamilegacy/postgresql-repmgr:17.6.0
+    restart: unless-stopped
+    volumes:
+      - pg_primary_data:/bitnami/postgresql
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=${POSTGRESQL_POSTGRES_PASSWORD}
+      - POSTGRESQL_USERNAME=${POSTGRESQL_USERNAME}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+      - POSTGRESQL_DATABASE=${POSTGRESQL_DATABASE}
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - REPMGR_PASSWORD=${REPMGR_PASSWORD}
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=pg-0,pg-1
+      - REPMGR_NODE_NAME=pg-0
+      - REPMGR_NODE_NETWORK_NAME=pg-0
+      - REPMGR_NODE_ID=1
+      - REPMGR_PORT_NUMBER=5432
+    networks:
+      - votos-net
+
+  pg-1:
+    image: docker.io/bitnamilegacy/postgresql-repmgr:17.6.0
+    restart: unless-stopped
+    depends_on:
+      - pg-0
+    volumes:
+      - pg_standby_data:/bitnami/postgresql
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=${POSTGRESQL_POSTGRES_PASSWORD}
+      - POSTGRESQL_USERNAME=${POSTGRESQL_USERNAME}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+      - POSTGRESQL_DATABASE=${POSTGRESQL_DATABASE}
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - REPMGR_PASSWORD=${REPMGR_PASSWORD}
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=pg-0,pg-1
+      - REPMGR_NODE_NAME=pg-1
+      - REPMGR_NODE_NETWORK_NAME=pg-1
+      - REPMGR_NODE_ID=2
+      - REPMGR_PORT_NUMBER=5432
+    networks:
+      - votos-net
+
+  pgpool:
+    image: docker.io/bitnamilegacy/pgpool:4.6.3
+    restart: unless-stopped
+    ports:
+      - "${PGPOOL_HOST_PORT:-5433}:5432"
+    depends_on:
+      - pg-0
+      - pg-1
+    environment:
+      - PGPOOL_BACKEND_NODES=0:pg-0:5432,1:pg-1:5432
+      - PGPOOL_SR_CHECK_USER=repmgr
+      - PGPOOL_SR_CHECK_PASSWORD=${REPMGR_PASSWORD}
+      - PGPOOL_POSTGRES_USERNAME=postgres
+      - PGPOOL_POSTGRES_PASSWORD=${POSTGRESQL_POSTGRES_PASSWORD}
+      - PGPOOL_ADMIN_USERNAME=admin
+      - PGPOOL_ADMIN_PASSWORD=${PGPOOL_ADMIN_PASSWORD}
+      - PGPOOL_ENABLE_LOAD_BALANCING=yes
+      - PGPOOL_POSTGRES_CUSTOM_USERS=${POSTGRESQL_USERNAME}
+      - PGPOOL_POSTGRES_CUSTOM_PASSWORDS=${POSTGRESQL_PASSWORD}
+    healthcheck:
+      test: ["CMD", "/opt/bitnami/scripts/pgpool/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - votos-net
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - DB_HOST=pgpool
+      - DB_PORT=5432
+      - DB_USER=${POSTGRESQL_USERNAME}
+      - DB_PASSWORD=${POSTGRESQL_PASSWORD}
+      - DB_NAME=${POSTGRESQL_DATABASE}
+      - DB_SSLMODE=disable
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_USER=${ADMIN_USER}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    depends_on:
+      pgpool:
+        condition: service_healthy
+    networks:
+      - votos-net
+
+volumes:
+  pg_primary_data:
+  pg_standby_data:
+
+networks:
+  votos-net:
+    driver: bridge
