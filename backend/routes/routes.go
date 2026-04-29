@@ -8,11 +8,14 @@ import (
 	"github.com/srvof/votos-backend/config"
 	"github.com/srvof/votos-backend/handlers"
 	"github.com/srvof/votos-backend/middleware"
+	"github.com/srvof/votos-backend/repository"
+	"github.com/srvof/votos-backend/services"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"gorm.io/gorm"
 )
 
 // Setup registra middlewares y rutas.
-func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
+func Setup(r *gin.Engine, db *gorm.DB, mongoDB *mongo.Database, cfg *config.Config) {
 	r.Use(corsMiddleware(cfg.CORSOrigins))
 
 	authH := &handlers.AuthHandler{DB: db, Config: cfg}
@@ -21,6 +24,10 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	recH := &handlers.RecintoHandler{DB: db}
 	mesaH := &handlers.MesaHandler{DB: db}
 	actaH := &handlers.ActaHandler{DB: db}
+	rrvActaRepo := repository.NewRRVActaRepository(mongoDB)
+	eventoRepo := repository.NewEventoRepository(mongoDB)
+	tw := services.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioMessagingSID, cfg.TwilioFromNumber)
+	rrvH := handlers.NewRRVHandler(rrvActaRepo, eventoRepo, tw)
 
 	r.GET("/health", health(db))
 
@@ -62,6 +69,24 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	protected.POST("/actas", actaH.Create)
 	protected.PUT("/actas/:id", actaH.Update)
 	protected.DELETE("/actas/:id", actaH.Delete)
+
+	rrv := r.Group("/api/rrv")
+	rrv.POST("/actas/upload", rrvH.Upload)
+	rrv.POST("/sms", rrvH.SMS)
+	rrv.POST("/webhook/sms", rrvH.WebhookSMS)
+	rrv.GET("/actas", rrvH.GetAll)
+	rrv.GET("/actas/:acta_id", rrvH.GetByID)
+	rrv.GET("/eventos", rrvH.GetEventos)
+
+	oficialH := &handlers.OficialHandler{DB: db}
+	oficial := r.Group("/api/oficial")
+	oficial.Use(middleware.AuthJWT(cfg.JWTSecret))
+	oficial.POST("/csv/upload", middleware.RequireAdmin(), oficialH.Upload)
+	oficial.GET("/actas", oficialH.GetActas)
+	oficial.GET("/actas/:acta_id", oficialH.GetActaByID)
+	oficial.GET("/auditoria", middleware.RequireAdmin(), oficialH.GetAuditoria)
+	oficial.GET("/errores", middleware.RequireAdmin(), oficialH.GetErrores)
+	oficial.GET("/eventos", middleware.RequireAdmin(), oficialH.GetEventos)
 }
 
 func corsMiddleware(allowed string) gin.HandlerFunc {

@@ -40,20 +40,21 @@ func seedDistribuciones(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	var items []models.DistribucionTerritorial
 	for _, row := range rows {
 		if len(row) < 4 {
 			continue
 		}
-		item := models.DistribucionTerritorial{
+		items = append(items, models.DistribucionTerritorial{
 			Departamento: strings.TrimSpace(row[1]),
 			Municipio:    strings.TrimSpace(row[2]),
 			Provincia:    strings.TrimSpace(row[3]),
-		}
-		if err := db.Create(&item).Error; err != nil {
-			return err
-		}
+		})
 	}
-	log.Printf("seed distribuciones: %d registros insertados", len(rows))
+	if err := db.CreateInBatches(items, 100).Error; err != nil {
+		return err
+	}
+	log.Printf("seed distribuciones: %d registros insertados", len(items))
 	return nil
 }
 
@@ -76,7 +77,7 @@ func seedRecintos(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	inserted := 0
+	var items []models.RecintoElectoral
 	for _, row := range rows {
 		if len(row) < 5 {
 			continue
@@ -90,19 +91,18 @@ func seedRecintos(db *gorm.DB) error {
 		if err != nil {
 			continue
 		}
-		recinto := models.RecintoElectoral{
+		items = append(items, models.RecintoElectoral{
 			RecintoID:                 uint(recintoID),
 			Recinto:                   strings.TrimSpace(row[2]),
 			Direccion:                 strings.TrimSpace(row[3]),
 			Mesas:                     strings.TrimSpace(row[4]),
 			IDDistribucionTerritorial: distID,
-		}
-		if err := db.Create(&recinto).Error; err != nil {
-			return err
-		}
-		inserted++
+		})
 	}
-	log.Printf("seed recintos: %d registros insertados", inserted)
+	if err := db.CreateInBatches(items, 100).Error; err != nil {
+		return err
+	}
+	log.Printf("seed recintos: %d registros insertados", len(items))
 	return nil
 }
 
@@ -120,7 +120,7 @@ func seedMesas(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	inserted := 0
+	var items []models.Mesa
 	for _, row := range rows {
 		if len(row) < 4 {
 			continue
@@ -138,17 +138,16 @@ func seedMesas(db *gorm.DB) error {
 		if err != nil {
 			continue
 		}
-		item := models.Mesa{
+		items = append(items, models.Mesa{
 			Codigo:             codigoMesa,
 			CantidadHabilitada: votantes,
 			IdRecintoElectoral: uint(recintoID),
-		}
-		if err := db.Create(&item).Error; err != nil {
-			return err
-		}
-		inserted++
+		})
 	}
-	log.Printf("seed mesas: %d registros insertados", inserted)
+	if err := db.CreateInBatches(items, 100).Error; err != nil {
+		return err
+	}
+	log.Printf("seed mesas: %d registros insertados", len(items))
 	return nil
 }
 

@@ -62,5 +62,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.RecintoElectoral{},
 		&models.Mesa{},
 		&models.Acta{},
+		&models.OficialAuditoria{},
+		&models.OficialError{},
+		&models.OficialEvento{},
 	)
 }

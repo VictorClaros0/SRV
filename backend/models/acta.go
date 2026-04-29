@@ -9,6 +9,8 @@ import (
 // Acta conteo de votos por mesa.
 type Acta struct {
 	ID                 uint           `gorm:"primaryKey" json:"id"`
+	CodigoActa         string         `gorm:"column:codigo_acta;size:100;index" json:"codigoActa"`
+	Fuente             string         `gorm:"column:fuente;size:50;default:'MANUAL'" json:"fuente"`
 	PapeletasNoUsadas  int            `gorm:"column:papeletas_no_usadas;not null" json:"papeletasNoUsadas"`
 	P1                 int            `gorm:"column:p1;not null" json:"p1"`
 	P2                 int            `gorm:"column:p2;not null" json:"p2"`
