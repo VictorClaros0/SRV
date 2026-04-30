@@ -22,8 +22,8 @@ func main() {
 	if err := database.AutoMigrate(db); err != nil {
 		log.Fatalf("migración: %v", err)
 	}
-	seedCatalogData(db)
 	seedAdmin(db, cfg)
+	seedCatalogData(db)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()

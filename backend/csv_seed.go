@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
+
 func seedCatalogData(db *gorm.DB) {
 	if err := seedDistribuciones(db); err != nil {
 		log.Printf("seed distribuciones: %v", err)
@@ -24,6 +25,73 @@ func seedCatalogData(db *gorm.DB) {
 	if err := seedMesas(db); err != nil {
 		log.Printf("seed mesas: %v", err)
 	}
+	if err := seedActas(db); err != nil {
+		log.Printf("seed actas: %v", err)
+	}
+}
+
+// seedActas lee ActasImpresas.csv y crea una acta en estado "impresa" por cada fila.
+// Los votos se dejan en cero: el workflow de n8n es el encargado de transcribirlos
+// llamando a POST /webhook/n8n/transcripcion con los datos de Transcripciones.csv.
+func seedActas(db *gorm.DB) error {
+	var count int64
+	if err := db.Model(&models.Acta{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		log.Printf("seed actas: omitido (tabla ya contiene %d registros)", count)
+		return nil
+	}
+
+	// Obtener ID del admin para campo de auditoría creado_por.
+	var adminID *uint
+	var admin models.Usuario
+	if err := db.Where("es_admin = true").First(&admin).Error; err == nil {
+		id := admin.ID
+		adminID = &id
+	}
+
+	// Validar actas usando ActasImpresas: construir mapa codigoActa → codigoRecinto.
+	actasImpresasRows, err := readCSV(filepath.Join("data", "ActasImpresas.csv"))
+	if err != nil {
+		return fmt.Errorf("ActasImpresas.csv no encontrado: %w", err)
+	}
+	actaRecintoMap := make(map[int64]int64, len(actasImpresasRows))
+	for _, row := range actasImpresasRows {
+		if len(row) < 2 {
+			continue
+		}
+		codigoRecinto, err := strconv.ParseInt(strings.TrimSpace(row[0]), 10, 64)
+		if err != nil {
+			continue
+		}
+		codigoActa, err := strconv.ParseInt(strings.TrimSpace(row[1]), 10, 64)
+		if err != nil {
+			continue
+		}
+		actaRecintoMap[codigoActa] = codigoRecinto
+	}
+
+	inserted := 0
+	for codigoActa, codigoRecinto := range actaRecintoMap {
+		// Derivar número de mesa: últimos 3 dígitos del código de acta.
+		nroMesa := int(codigoActa % 1000)
+
+		acta := models.Acta{
+			CodigoActa:    codigoActa,
+			CodigoRecinto: codigoRecinto,
+			NroMesa:       nroMesa,
+			Estado:        "impresa",
+			CreadoPorID:   adminID,
+		}
+		if err := db.Create(&acta).Error; err != nil {
+			log.Printf("seed actas: error codigoActa=%d: %v", codigoActa, err)
+			continue
+		}
+		inserted++
+	}
+	log.Printf("seed actas: %d actas insertadas en estado 'impresa' (pendientes de transcripción por n8n)", inserted)
+	return nil
 }
 
 func seedDistribuciones(db *gorm.DB) error {

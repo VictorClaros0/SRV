@@ -21,8 +21,14 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	recH := &handlers.RecintoHandler{DB: db}
 	mesaH := &handlers.MesaHandler{DB: db}
 	actaH := &handlers.ActaHandler{DB: db}
+	resH := &handlers.ResultadosHandler{DB: db}
 
 	r.GET("/health", health(db))
+
+	// Endpoints públicos consumidos por n8n (sin JWT)
+	r.POST("/webhook/n8n/transcripcion", actaH.WebhookN8N)
+	r.GET("/api/v1/actas/para-transcribir", actaH.ParaTranscribir)
+	r.POST("/api/v1/actas/procesar-transcripciones", actaH.ProcesarTranscripciones)
 
 	v1 := r.Group("/api/v1")
 
@@ -62,6 +68,9 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	protected.POST("/actas", actaH.Create)
 	protected.PUT("/actas/:id", actaH.Update)
 	protected.DELETE("/actas/:id", actaH.Delete)
+
+	protected.GET("/resultados", resH.Resultados)
+	protected.GET("/auditoria", resH.Auditoria)
 }
 
 func corsMiddleware(allowed string) gin.HandlerFunc {
