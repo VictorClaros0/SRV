@@ -6,7 +6,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config carga la configuración de la API y la base de datos.
+// Config carga la configuración de la API y las bases de datos.
 type Config struct {
 	Port        string
 	DBHost      string
@@ -19,6 +19,9 @@ type Config struct {
 	AdminUser   string
 	AdminPass   string
 	CORSOrigins string
+	// MongoDB
+	MongoURI    string
+	MongoDBName string
 }
 
 // Load lee variables de entorno; intenta cargar .env si existe.
@@ -37,6 +40,8 @@ func Load() *Config {
 		AdminUser:   getEnv("ADMIN_USER", "admin"),
 		AdminPass:   getEnv("ADMIN_PASSWORD", "admin123"),
 		CORSOrigins: getEnv("CORS_ORIGINS", "*"),
+		MongoURI:    getEnv("MONGO_URI", "mongodb://admin:admin123@localhost:27017/?authSource=admin"),
+		MongoDBName: getEnv("MONGO_DATABASE", "rrv"),
 	}
 }
 

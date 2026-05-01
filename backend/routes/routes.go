@@ -5,14 +5,17 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/srvof/votos-backend/comparacion"
 	"github.com/srvof/votos-backend/config"
+	"github.com/srvof/votos-backend/dashboard"
 	"github.com/srvof/votos-backend/handlers"
 	"github.com/srvof/votos-backend/middleware"
+	"go.mongodb.org/mongo-driver/mongo"
 	"gorm.io/gorm"
 )
 
 // Setup registra middlewares y rutas.
-func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
+func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Client) {
 	r.Use(corsMiddleware(cfg.CORSOrigins))
 
 	authH := &handlers.AuthHandler{DB: db, Config: cfg}
@@ -71,6 +74,12 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 
 	protected.GET("/resultados", resH.Resultados)
 	protected.GET("/auditoria", resH.Auditoria)
+
+	// Módulo de comparación RRV vs Oficial (solo lectura / CQRS Query)
+	comparacion.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName)
+
+	// Dashboard endpoints listos para Chart.js (solo lectura / CQRS Query)
+	dashboard.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName)
 }
 
 func corsMiddleware(allowed string) gin.HandlerFunc {
@@ -79,7 +88,6 @@ func corsMiddleware(allowed string) gin.HandlerFunc {
 		if origin == "" {
 			origin = "*"
 		}
-		// Si hay varios orígenes separados por coma, coincide con el header Origin
 		reqOrigin := c.GetHeader("Origin")
 		if origin != "*" && reqOrigin != "" {
 			for _, o := range strings.Split(origin, ",") {

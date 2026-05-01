@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec *)",
+      "Bash(curl -s -b /tmp/n8n-cookies.txt http://localhost:5678/rest/workflows)",
+      "Bash(go build *)",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(curl -s -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"usuario\":\"admin\",\"contrasena\":\"admin123\"}')"
+    ]
+  }
+}

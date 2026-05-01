@@ -15,9 +15,10 @@ import (
 func main() {
 	cfg := config.Load()
 
+	// PostgreSQL (Oficial)
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("conexión DB: %v", err)
+		log.Fatalf("conexión PostgreSQL: %v", err)
 	}
 	if err := database.AutoMigrate(db); err != nil {
 		log.Fatalf("migración: %v", err)
@@ -25,11 +26,17 @@ func main() {
 	seedAdmin(db, cfg)
 	seedCatalogData(db)
 
+	// MongoDB (RRV/TREP)
+	mongoClient, err := database.ConnectMongo(cfg)
+	if err != nil {
+		log.Fatalf("conexión MongoDB: %v", err)
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
-	routes.Setup(r, db, cfg)
+	routes.Setup(r, db, cfg, mongoClient)
 
 	addr := ":" + cfg.Port
 	log.Printf("API escuchando en %s", addr)
