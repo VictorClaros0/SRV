@@ -62,18 +62,68 @@ export const api = {
     auditoria: () => request('GET', '/auditoria'),
   },
 
-  // Dispara el workflow de n8n que simula la transcripción masiva.
-  // n8n lee /api/v1/actas/para-transcribir y llama al webhook por cada acta.
-  simularTranscripcion: () =>
-    fetch('/n8n/webhook/trigger-transcripcion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    }).then(async r => {
-      if (!r.ok) {
-        const txt = await r.text().catch(() => r.statusText)
-        throw new Error(txt || 'n8n no respondió. ¿El workflow está activo?')
-      }
-      return r.json().catch(() => ({ ok: true }))
-    }),
+  // ─── Transcripción masiva (flujo: React → Backend → n8n → Backend webhook → PostgreSQL) ──
+  // El frontend NUNCA llama a n8n directamente.
+
+  transcripcion: {
+    // Llama al backend que orquesta n8n.
+    // opts.fallback = true → si n8n falla, backend procesa Transcripciones.csv directamente.
+    simular: (opts = {}) => {
+      const qs = opts.fallback ? '?fallback=true' : ''
+      return request('POST', `/transcripcion/simular${qs}`, {})
+    },
+  },
+
+  // ─── Dashboard ───────────────────────────────────────────────────────────────
+  // Todos los endpoints son GET de solo lectura. No calculan nada en frontend.
+
+  dashboard: {
+    getKPIs: () => request('GET', '/dashboard/kpis'),
+    getRRVvsOficial: () => request('GET', '/dashboard/rrv-vs-oficial'),
+    getVotosCandidato: () => request('GET', '/dashboard/votos-candidato'),
+    getParticipacion: () => request('GET', '/dashboard/participacion'),
+    getGeografico: (groupBy = 'departamento') =>
+      request('GET', `/dashboard/geografico?group_by=${groupBy}`),
+    getTecnico: () => request('GET', '/dashboard/tecnico'),
+    getInconsistencias: () => request('GET', '/dashboard/inconsistencias'),
+  },
+
+  // ─── Comparación RRV vs Oficial ──────────────────────────────────────────────
+
+  comparacion: {
+    list: (params = {}) => {
+      const qs = new URLSearchParams(params).toString()
+      return request('GET', `/comparacion${qs ? '?' + qs : ''}`)
+    },
+    resumen: () => request('GET', '/comparacion/resumen'),
+    getActa: (actaId) => request('GET', `/comparacion/${actaId}`),
+  },
+
+  // ─── Scanner / Transcriptor ──────────────────────────────────────────────────
+  // Envía archivo (imagen/PDF) al backend. NO usa JSON, usa FormData.
+
+  scanner: {
+    transcribir: (file, opts = {}) => {
+      const fd = new FormData()
+      fd.append('archivo', file)
+      if (opts.codigoActa) fd.append('codigo_acta', String(opts.codigoActa))
+      if (opts.actaId) fd.append('acta_id', String(opts.actaId))
+
+      return fetch(BASE + '/scanner/transcribir', {
+        method: 'POST',
+        // No poner Content-Type: el browser lo setea con boundary para FormData
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: fd,
+      }).then(async r => {
+        if (r.status === 401) {
+          localStorage.removeItem('token')
+          window.location.href = '/login'
+          return
+        }
+        const data = await r.json().catch(() => ({ error: r.statusText }))
+        if (!r.ok) throw new Error(data.error || r.statusText)
+        return data
+      })
+    },
+  },
 }

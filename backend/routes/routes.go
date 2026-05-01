@@ -25,6 +25,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Cl
 	mesaH := &handlers.MesaHandler{DB: db}
 	actaH := &handlers.ActaHandler{DB: db}
 	resH := &handlers.ResultadosHandler{DB: db}
+	scannerH := &handlers.ScannerHandler{DB: db}
+	transcripcionH := &handlers.TranscripcionHandler{DB: db, N8NWebhookURL: cfg.N8NWebhookURL}
 
 	r.GET("/health", health(db))
 
@@ -74,6 +76,12 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Cl
 
 	protected.GET("/resultados", resH.Resultados)
 	protected.GET("/auditoria", resH.Auditoria)
+
+	protected.POST("/scanner/transcribir", scannerH.Transcribir)
+
+	// Transcripción: frontend → backend → n8n → backend webhook → PostgreSQL
+	// Con ?fallback=true usa Transcripciones.csv directamente si n8n no está disponible
+	protected.POST("/transcripcion/simular", transcripcionH.Simular)
 
 	// Módulo de comparación RRV vs Oficial (solo lectura / CQRS Query)
 	comparacion.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName)

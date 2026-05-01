@@ -6,17 +6,29 @@ const s = {
   nav: {
     background: '#1a1a2e', color: '#fff', display: 'flex',
     alignItems: 'center', padding: '0 24px', height: 56,
-    gap: 24,
+    gap: 4, flexWrap: 'wrap',
   },
-  brand: { fontWeight: 700, fontSize: 18, letterSpacing: 1, color: '#e0e0e0', marginRight: 'auto' },
-  link: { color: '#aaa', textDecoration: 'none', fontSize: 14, padding: '4px 8px', borderRadius: 4 },
+  brand: { fontWeight: 700, fontSize: 17, letterSpacing: 1, color: '#e0e0e0', marginRight: 12 },
+  link: {
+    color: '#aaa', textDecoration: 'none', fontSize: 13, fontWeight: 500,
+    padding: '5px 11px', borderRadius: 5, whiteSpace: 'nowrap',
+  },
   activeLink: { color: '#fff', background: '#2d2d5e' },
+  spacer: { flex: 1 },
   logout: {
     background: 'none', border: '1px solid #555', color: '#ccc',
-    cursor: 'pointer', borderRadius: 4, padding: '4px 12px', fontSize: 13,
+    cursor: 'pointer', borderRadius: 5, padding: '5px 14px', fontSize: 13,
+    marginLeft: 8,
   },
-  main: { flex: 1, padding: 24 },
+  main: { flex: 1, padding: 24, background: '#f0f2f5' },
 }
+
+const LINKS = [
+  { to: '/dashboard',       label: 'Dashboard' },
+  { to: '/scanner',         label: 'Scanner' },
+  { to: '/inconsistencias', label: 'Inconsistencias' },
+  { to: '/actas',           label: 'Actas' },
+]
 
 export default function Layout() {
   const nav = useNavigate()
@@ -28,9 +40,16 @@ export default function Layout() {
     <div style={s.shell}>
       <nav style={s.nav}>
         <span style={s.brand}>SROV</span>
-        <NavLink to="/actas" style={({ isActive }) => ({ ...s.link, ...(isActive ? s.activeLink : {}) })}>
-          Actas
-        </NavLink>
+        {LINKS.map(({ to, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            style={({ isActive }) => ({ ...s.link, ...(isActive ? s.activeLink : {}) })}
+          >
+            {label}
+          </NavLink>
+        ))}
+        <div style={s.spacer} />
         <button style={s.logout} onClick={logout}>Cerrar sesión</button>
       </nav>
       <main style={s.main}>

@@ -24,6 +24,10 @@ const s = {
     background: '#f0fff4', color: '#27ae60', border: '1.5px solid #27ae60',
     borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontSize: 14, fontWeight: 600,
   },
+  btnFallback: {
+    background: '#fff7ed', color: '#c05621', border: '1.5px solid #c05621',
+    borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+  },
   btnDisabled: {
     background: '#f0f0f0', color: '#aaa', border: 'none', borderRadius: 8,
     padding: '9px 18px', cursor: 'not-allowed', fontSize: 14, fontWeight: 600,
@@ -87,6 +91,7 @@ export default function Actas() {
   const [page, setPage] = useState(1)
   const [msg, setMsg] = useState({ texto: '', ok: true })
   const [simulando, setSimulando] = useState(false)
+  const [n8nFallbackDisponible, setN8nFallbackDisponible] = useState(false)
   const pollRef = useRef(null)
   const nav = useNavigate()
 
@@ -117,15 +122,45 @@ export default function Actas() {
   const observada = conteo.observada || 0
   const progresoPct = total > 0 ? Math.round(((transcrita + observada) / total) * 100) : 0
 
-  async function handleSimular() {
+  // Lanza transcripción a través del backend (que llama a n8n).
+  // opts.fallback=true: backend procesa el CSV directamente si n8n no responde.
+  async function handleSimular(opts = {}) {
     setMsg({ texto: '', ok: true })
+    setN8nFallbackDisponible(false)
+    setSimulando(true)
     try {
-      const snapshot = { transcrita: actas.filter(a => a.estado === 'transcrita').length, observada: actas.filter(a => a.estado === 'observada').length }
-      await api.simularTranscripcion()
-      setSimulando(true)
-      setMsg({ texto: '▶ Simulación iniciada en n8n. Las actas se irán actualizando...', ok: true })
+      const snapshot = {
+        transcrita: actas.filter(a => a.estado === 'transcrita').length,
+        observada: actas.filter(a => a.estado === 'observada').length,
+      }
+
+      // Llama al backend, que orquesta n8n (nunca a n8n directamente)
+      const res = await api.transcripcion.simular(opts)
+
+      // El backend devuelve HTTP 200 siempre pero success:false cuando n8n falla
+      if (!res?.success) {
+        const detalle = [res?.message, res?.hint].filter(Boolean).join('. ')
+        setMsg({ texto: detalle || 'n8n no disponible.', ok: false })
+        setN8nFallbackDisponible(true) // mostrar botón de fallback
+        setSimulando(false)
+        return
+      }
+
+      // Fallback síncrono completado en el propio backend
+      if (res.estado === 'COMPLETADO') {
+        setMsg({
+          texto: `Completado (${res.source === 'backend_fallback' ? 'fallback directo' : 'n8n'}): ${res.actualizadas || 0} transcritas, ${res.observadas || 0} observadas.`,
+          ok: true,
+        })
+        loadActas()
+        setSimulando(false)
+        return
+      }
+
+      // n8n aceptó el webhook — polling hasta que las actas cambien
+      setMsg({ texto: 'Flujo iniciado en n8n. Las actas se actualizarán automáticamente...', ok: true })
       let ticks = 0
-      const MAX_TICKS = 60 // máximo 2 minutos
+      const MAX_TICKS = 60
       pollRef.current = setInterval(async () => {
         ticks++
         const data = await api.actas.list().catch(() => null)
@@ -134,15 +169,17 @@ export default function Actas() {
         const impresa = data.filter(a => a.estado === 'impresa').length
         const transcrita = data.filter(a => a.estado === 'transcrita').length
         const observada = data.filter(a => a.estado === 'observada').length
-        const estabilizado = impresa === 0 && (transcrita !== snapshot.transcrita || observada !== snapshot.observada || ticks >= MAX_TICKS)
+        const estabilizado = impresa === 0 && (transcrita !== snapshot.transcrita || observada !== snapshot.observada)
         if (estabilizado || ticks >= MAX_TICKS) {
           clearInterval(pollRef.current)
           setSimulando(false)
-          setMsg({ texto: `✓ Transcripción completada. ${transcrita} transcritas, ${observada} observadas.`, ok: true })
+          setMsg({ texto: `Transcripción completada. ${transcrita} transcritas, ${observada} observadas.`, ok: true })
         }
       }, 2000)
     } catch (e) {
       setMsg({ texto: 'Error: ' + e.message, ok: false })
+      setN8nFallbackDisponible(true)
+      setSimulando(false)
     }
   }
 
@@ -167,12 +204,22 @@ export default function Actas() {
         <button style={s.btnPrimary} onClick={() => nav('/actas/nueva')}>+ Nueva acta</button>
         <button
           style={simulando ? s.btnDisabled : s.btnN8n}
-          onClick={handleSimular}
+          onClick={() => handleSimular()}
           disabled={simulando}
           title="Dispara el workflow de n8n que transcribe todas las actas impresas"
         >
-          {simulando ? '⏳ Simulando...' : '▶ Simular transcripción (n8n)'}
+          {simulando ? 'Simulando...' : 'Simular transcripción con n8n'}
         </button>
+        {n8nFallbackDisponible && (
+          <button
+            style={simulando ? s.btnDisabled : s.btnFallback}
+            onClick={() => handleSimular({ fallback: true })}
+            disabled={simulando}
+            title="Procesa Transcripciones.csv desde el backend sin llamar a n8n"
+          >
+            Simular sin n8n (fallback)
+          </button>
+        )}
       </div>
 
       {/* Contadores de estado */}

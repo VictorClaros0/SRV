@@ -22,6 +22,8 @@ type Config struct {
 	// MongoDB
 	MongoURI    string
 	MongoDBName string
+	// n8n
+	N8NWebhookURL string
 }
 
 // Load lee variables de entorno; intenta cargar .env si existe.
@@ -40,8 +42,9 @@ func Load() *Config {
 		AdminUser:   getEnv("ADMIN_USER", "admin"),
 		AdminPass:   getEnv("ADMIN_PASSWORD", "admin123"),
 		CORSOrigins: getEnv("CORS_ORIGINS", "*"),
-		MongoURI:    getEnv("MONGO_URI", "mongodb://admin:admin123@localhost:27017/?authSource=admin"),
-		MongoDBName: getEnv("MONGO_DATABASE", "rrv"),
+		MongoURI:      getEnv("MONGO_URI", "mongodb://admin:admin123@localhost:27017/?authSource=admin"),
+		MongoDBName:   getEnv("MONGO_DATABASE", "rrv"),
+		N8NWebhookURL: getEnv("N8N_TRIGGER_WEBHOOK_URL", "http://n8n:5678/webhook/trigger-transcripcion"),
 	}
 }
 
