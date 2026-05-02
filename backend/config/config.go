@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -20,8 +21,10 @@ type Config struct {
 	AdminPass   string
 	CORSOrigins string
 	// MongoDB
-	MongoURI    string
-	MongoDBName string
+	MongoURI            string
+	MongoDBName         string
+	MongoRRVCollections []string
+	MongoEventsCollection string
 	// n8n
 	N8NWebhookURL string
 }
@@ -42,8 +45,10 @@ func Load() *Config {
 		AdminUser:   getEnv("ADMIN_USER", "admin"),
 		AdminPass:   getEnv("ADMIN_PASSWORD", "admin123"),
 		CORSOrigins: getEnv("CORS_ORIGINS", "*"),
-		MongoURI:      getEnv("MONGO_URI", "mongodb://admin:admin123@localhost:27017/?authSource=admin"),
-		MongoDBName:   getEnv("MONGO_DATABASE", "rrv"),
+		MongoURI:              getEnv("MONGO_URI", "mongodb://admin:admin123@localhost:27017/?authSource=admin"),
+		MongoDBName:           getEnv("MONGO_DATABASE", "rrv"),
+		MongoRRVCollections:   getEnvList("MONGO_RRV_COLLECTIONS", getEnv("MONGO_RRV_COLLECTION", "actas_rrv")),
+		MongoEventsCollection: getEnv("MONGO_EVENTS_COLLECTION", "rrv_eventos"),
 		N8NWebhookURL: getEnv("N8N_TRIGGER_WEBHOOK_URL", "http://n8n:5678/webhook/trigger-transcripcion"),
 	}
 }
@@ -53,4 +58,22 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func getEnvList(key, def string) []string {
+	raw := getEnv(key, def)
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		item := strings.TrimSpace(part)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return []string{"actas_rrv"}
+	}
+	return out
 }

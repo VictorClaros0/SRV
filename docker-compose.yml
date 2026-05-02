@@ -97,6 +97,8 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - MONGO_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE}?authSource=admin
       - MONGO_DATABASE=${MONGO_DATABASE}
+      - MONGO_RRV_COLLECTIONS=${MONGO_RRV_COLLECTIONS:-actas_rrv,rrv_actas}
+      - MONGO_EVENTS_COLLECTION=${MONGO_EVENTS_COLLECTION:-rrv_eventos}
       - N8N_TRIGGER_WEBHOOK_URL=${N8N_TRIGGER_WEBHOOK_URL:-http://n8n:5678/webhook/trigger-transcripcion}
     depends_on:
       pgpool:

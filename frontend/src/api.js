@@ -62,6 +62,11 @@ export const api = {
     auditoria: () => request('GET', '/auditoria'),
   },
 
+  oficial: {
+    getResultados: () => request('GET', '/resultados'),
+    getAuditoria: () => request('GET', '/auditoria'),
+  },
+
   // ─── Transcripción masiva (flujo: React → Backend → n8n → Backend webhook → PostgreSQL) ──
   // El frontend NUNCA llama a n8n directamente.
 
@@ -86,6 +91,7 @@ export const api = {
       request('GET', `/dashboard/geografico?group_by=${groupBy}`),
     getTecnico: () => request('GET', '/dashboard/tecnico'),
     getInconsistencias: () => request('GET', '/dashboard/inconsistencias'),
+    getEventosRRV: () => request('GET', '/dashboard/eventos-rrv'),
   },
 
   // ─── Comparación RRV vs Oficial ──────────────────────────────────────────────

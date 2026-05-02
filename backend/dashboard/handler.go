@@ -9,7 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/srvof/votos-backend/comparacion"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"gorm.io/gorm"
 )
@@ -21,15 +23,20 @@ type Handler struct {
 	comp        *comparacion.Comparer
 	db          *gorm.DB
 	mongoClient *mongo.Client
+	eventsCollection string
 }
 
 // NewHandler construye el Handler del dashboard.
-func NewHandler(db *gorm.DB, mongoClient *mongo.Client, dbName string) *Handler {
+func NewHandler(db *gorm.DB, mongoClient *mongo.Client, dbName string, rrvCollections []string, eventsCollection string) *Handler {
+	if eventsCollection == "" {
+		eventsCollection = "rrv_eventos"
+	}
 	return &Handler{
-		svc:         &comparacion.Service{DB: db, MongoClient: mongoClient, DBName: dbName},
-		comp:        &comparacion.Comparer{},
-		db:          db,
-		mongoClient: mongoClient,
+		svc:              &comparacion.Service{DB: db, MongoClient: mongoClient, DBName: dbName, RRVCollections: rrvCollections},
+		comp:             &comparacion.Comparer{},
+		db:               db,
+		mongoClient:      mongoClient,
+		eventsCollection: eventsCollection,
 	}
 }
 
@@ -356,11 +363,7 @@ func (h *Handler) Tecnico(c *gin.Context) {
 	var totalActasPG int64
 	h.db.Table("acta").Where("fecha_eliminado IS NULL").Count(&totalActasPG)
 
-	var totalActasRRV int64
-	col := h.mongoClient.Database(h.svc.DBName).Collection("actas_rrv")
-	countCtx, countCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer countCancel()
-	totalActasRRV, _ = col.CountDocuments(countCtx, map[string]interface{}{})
+	totalActasRRV := h.countRRVActas(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{
 		"timestamp":            time.Now().UTC(),
@@ -373,9 +376,10 @@ func (h *Handler) Tecnico(c *gin.Context) {
 		},
 		"fuentes": gin.H{
 			"mongodb": gin.H{
-				"estado":      mongoStatus,
-				"total_actas": totalActasRRV,
-				"coleccion":   "actas_rrv",
+				"estado":       mongoStatus,
+				"total_actas":  totalActasRRV,
+				"colecciones":  h.svc.RRVCollections,
+				"eventos_rrv":  h.eventsCollection,
 			},
 			"postgresql": gin.H{
 				"estado":      pgStatus,
@@ -391,6 +395,63 @@ func (h *Handler) Tecnico(c *gin.Context) {
 	})
 }
 
+// EventosRRV expone el audit log que produce SRRV2 en MongoDB.
+func (h *Handler) EventosRRV(c *gin.Context) {
+	type eventoMongo struct {
+		ActaID    string                 `bson:"acta_id"`
+		Tipo      string                 `bson:"tipo"`
+		Fuente    string                 `bson:"fuente"`
+		Payload   map[string]interface{} `bson:"payload"`
+		Error     string                 `bson:"error"`
+		Timestamp time.Time              `bson:"timestamp"`
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	col := h.mongoClient.Database(h.svc.DBName).Collection(h.eventsCollection)
+	total, _ := col.CountDocuments(ctx, bson.D{})
+	cur, err := col.Find(ctx, bson.D{}, options.Find().
+		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
+		SetLimit(50),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cur.Close(ctx)
+
+	eventos := []gin.H{}
+	for cur.Next(ctx) {
+		var raw eventoMongo
+		if err := cur.Decode(&raw); err != nil {
+			continue
+		}
+		descripcion := raw.Tipo
+		if raw.Error != "" {
+			descripcion = raw.Error
+		}
+		eventos = append(eventos, gin.H{
+			"tipo_evento":  raw.Tipo,
+			"acta_id":      raw.ActaID,
+			"fuente":       raw.Fuente,
+			"descripcion":  descripcion,
+			"fecha_evento": raw.Timestamp,
+			"payload":      raw.Payload,
+		})
+	}
+	if err := cur.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"coleccion":     h.eventsCollection,
+		"total_eventos": total,
+		"eventos":       eventos,
+	})
+}
+
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
 func (h *Handler) fetchAmbas(ctx context.Context) (rrv, oficiales []comparacion.ActaFuente, err error) {
@@ -403,6 +464,31 @@ func (h *Handler) fetchAmbas(ctx context.Context) (rrv, oficiales []comparacion.
 		return nil, nil, err
 	}
 	return rrv, oficiales, nil
+}
+
+func (h *Handler) countRRVActas(ctx context.Context) int64 {
+	countCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var total int64
+	seen := map[string]bool{}
+	collections := h.svc.RRVCollections
+	if len(collections) == 0 {
+		collections = []string{"actas_rrv"}
+	}
+	for _, collection := range collections {
+		collection = strings.TrimSpace(collection)
+		if collection == "" || seen[collection] {
+			continue
+		}
+		seen[collection] = true
+		col := h.mongoClient.Database(h.svc.DBName).Collection(collection)
+		count, err := col.CountDocuments(countCtx, bson.D{})
+		if err == nil {
+			total += count
+		}
+	}
+	return total
 }
 
 func (h *Handler) runComparacion(ctx context.Context) (comparacion.ResumenComparacion, error) {

@@ -8,8 +8,8 @@ import (
 
 // RegisterRoutes registra los endpoints del módulo de comparación.
 // Todos son GET (solo lectura — patrón CQRS/Query).
-func RegisterRoutes(protected *gin.RouterGroup, db *gorm.DB, mongoClient *mongo.Client, dbName string) {
-	h := newHandler(db, mongoClient, dbName)
+func RegisterRoutes(protected *gin.RouterGroup, db *gorm.DB, mongoClient *mongo.Client, dbName string, rrvCollections []string) {
+	h := newHandler(db, mongoClient, dbName, rrvCollections)
 
 	cmp := protected.Group("/comparacion")
 	cmp.GET("", h.Comparar)

@@ -84,10 +84,10 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Cl
 	protected.POST("/transcripcion/simular", transcripcionH.Simular)
 
 	// Módulo de comparación RRV vs Oficial (solo lectura / CQRS Query)
-	comparacion.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName)
+	comparacion.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName, cfg.MongoRRVCollections)
 
 	// Dashboard endpoints listos para Chart.js (solo lectura / CQRS Query)
-	dashboard.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName)
+	dashboard.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName, cfg.MongoRRVCollections, cfg.MongoEventsCollection)
 }
 
 func corsMiddleware(allowed string) gin.HandlerFunc {

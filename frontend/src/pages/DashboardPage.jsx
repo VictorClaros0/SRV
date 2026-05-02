@@ -10,6 +10,9 @@ import GeograficoPanel from '../components/dashboard/GeograficoPanel.jsx'
 import TecnicoPanel from '../components/dashboard/TecnicoPanel.jsx'
 import InconsistenciasTable from '../components/InconsistenciasTable.jsx'
 import ModalDetalleActa from '../components/dashboard/ModalDetalleActa.jsx'
+import ResultadosOficialesPanel from '../components/dashboard/ResultadosOficialesPanel.jsx'
+import AuditoriaOficialPanel from '../components/dashboard/AuditoriaOficialPanel.jsx'
+import EventosRRVPanel from '../components/dashboard/EventosRRVPanel.jsx'
 
 const s = {
   page: {},
@@ -33,6 +36,9 @@ export default function DashboardPage() {
   const [part, setPart] = useState(null)
   const [tecnico, setTecnico] = useState(null)
   const [inconsistencias, setInconsistencias] = useState(null)
+  const [resultadosOficiales, setResultadosOficiales] = useState(null)
+  const [auditoriaOficial, setAuditoriaOficial] = useState(null)
+  const [eventosRRV, setEventosRRV] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [modalActaId, setModalActaId] = useState(null)
@@ -42,13 +48,16 @@ export default function DashboardPage() {
     setLoading(true)
     setError('')
     try {
-      const [k, r, v, p, t, inc] = await Promise.all([
+      const [k, r, v, p, t, inc, ro, ao, ev] = await Promise.all([
         api.dashboard.getKPIs(),
         api.dashboard.getRRVvsOficial(),
         api.dashboard.getVotosCandidato(),
         api.dashboard.getParticipacion(),
         api.dashboard.getTecnico(),
         api.dashboard.getInconsistencias(),
+        api.oficial.getResultados(),
+        api.oficial.getAuditoria(),
+        api.dashboard.getEventosRRV(),
       ])
       setKpis(k)
       setRrv(r)
@@ -56,6 +65,9 @@ export default function DashboardPage() {
       setPart(p)
       setTecnico(t)
       setInconsistencias(inc)
+      setResultadosOficiales(ro)
+      setAuditoriaOficial(ao)
+      setEventosRRV(ev)
       setLastUpdate(new Date().toLocaleTimeString())
     } catch (e) {
       setError(e.message || 'No se pudo conectar con el backend.')
@@ -99,6 +111,15 @@ export default function DashboardPage() {
       {/* Geográfico — maneja su propio estado */}
       <div style={{ marginBottom: 16 }}>
         <GeograficoPanel />
+      </div>
+
+      <div style={s.grid2}>
+        <ResultadosOficialesPanel data={resultadosOficiales} />
+        <AuditoriaOficialPanel data={auditoriaOficial} />
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <EventosRRVPanel data={eventosRRV} />
       </div>
 
       {/* Inconsistencias */}

@@ -19,9 +19,9 @@ type Handler struct {
 	comp *Comparer
 }
 
-func newHandler(db *gorm.DB, mongoClient *mongo.Client, dbName string) *Handler {
+func newHandler(db *gorm.DB, mongoClient *mongo.Client, dbName string, rrvCollections []string) *Handler {
 	return &Handler{
-		svc:  &Service{DB: db, MongoClient: mongoClient, DBName: dbName},
+		svc:  &Service{DB: db, MongoClient: mongoClient, DBName: dbName, RRVCollections: rrvCollections},
 		comp: &Comparer{},
 	}
 }
