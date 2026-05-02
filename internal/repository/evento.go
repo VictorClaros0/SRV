@@ -10,14 +10,17 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-const colEvento = "rrv_eventos"
+const defaultEventoCollection = "rrv_eventos"
 
 type EventoRepository struct {
 	col *mongo.Collection
 }
 
-func NewEventoRepository(db *mongo.Database) *EventoRepository {
-	return &EventoRepository{col: db.Collection(colEvento)}
+func NewEventoRepository(db *mongo.Database, collectionName string) *EventoRepository {
+	if collectionName == "" {
+		collectionName = defaultEventoCollection
+	}
+	return &EventoRepository{col: db.Collection(collectionName)}
 }
 
 func (r *EventoRepository) Create(ctx context.Context, e *models.Evento) error {

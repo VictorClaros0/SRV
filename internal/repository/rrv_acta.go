@@ -10,14 +10,17 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-const colRRVActa = "rrv_actas"
+const defaultRRVActaCollection = "actas_rrv"
 
 type RRVActaRepository struct {
 	col *mongo.Collection
 }
 
-func NewRRVActaRepository(db *mongo.Database) *RRVActaRepository {
-	return &RRVActaRepository{col: db.Collection(colRRVActa)}
+func NewRRVActaRepository(db *mongo.Database, collectionName string) *RRVActaRepository {
+	if collectionName == "" {
+		collectionName = defaultRRVActaCollection
+	}
+	return &RRVActaRepository{col: db.Collection(collectionName)}
 }
 
 func (r *RRVActaRepository) ExistsByActaID(ctx context.Context, actaID string) (bool, error) {
@@ -65,4 +68,22 @@ func (r *RRVActaRepository) GetByActaID(ctx context.Context, actaID string) (*mo
 		return nil, err
 	}
 	return &result, nil
+}
+
+// DeleteByHash removes the acta identified by hash_origen. Used only when
+// OCR_ALLOW_REPROCESS=true to allow re-uploading the same file after improving OCR.
+func (r *RRVActaRepository) DeleteByHash(ctx context.Context, hash string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := r.col.DeleteOne(ctx, bson.M{"hash_origen": hash})
+	return err
+}
+
+// DeleteByActaID removes the acta identified by acta_id. Used as cleanup
+// companion to DeleteByHash during reprocessing.
+func (r *RRVActaRepository) DeleteByActaID(ctx context.Context, actaID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := r.col.DeleteOne(ctx, bson.M{"acta_id": actaID})
+	return err
 }

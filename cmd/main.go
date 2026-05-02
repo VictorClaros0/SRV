@@ -50,8 +50,8 @@ func main() {
 	recintoRepo      := repository.NewRecintoRepository(db)
 	mesaRepo         := repository.NewMesaRepository(db)
 	actaRepo         := repository.NewActaRepository(db)
-	rrvActaRepo      := repository.NewRRVActaRepository(db)
-	eventoRepo       := repository.NewEventoRepository(db)
+	rrvActaRepo      := repository.NewRRVActaRepository(db, cfg.RRVCollection)
+	eventoRepo       := repository.NewEventoRepository(db, cfg.EventsCollection)
 
 	// ── Handlers ──────────────────────────────────────────────────────────────
 	distribucionH := handlers.NewDistribucionHandler(distribucionRepo)

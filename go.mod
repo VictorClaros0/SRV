@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	go.mongodb.org/mongo-driver/v2 v2.5.0
 )
 

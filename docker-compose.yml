@@ -1,8 +1,11 @@
+name: srrv2
+
 services:
   # ── MongoDB Node 1 (Primary) ────────────────────────────────────────────────
   mongo1:
     image: mongo:7
     container_name: electoral_mongo1
+    profiles: ["local-mongo"]
     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
     restart: unless-stopped
     ports:
@@ -22,6 +25,7 @@ services:
   mongo2:
     image: mongo:7
     container_name: electoral_mongo2
+    profiles: ["local-mongo"]
     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
     restart: unless-stopped
     ports:
@@ -41,6 +45,7 @@ services:
   mongo-arbiter:
     image: mongo:7
     container_name: electoral_mongo_arbiter
+    profiles: ["local-mongo"]
     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
     restart: unless-stopped
     ports:
@@ -58,6 +63,7 @@ services:
   mongo-setup:
     image: mongo:7
     container_name: electoral_mongo_setup
+    profiles: ["local-mongo"]
     depends_on:
       mongo1:
         condition: service_healthy
@@ -93,14 +99,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: electoral_api
+    container_name: srrv2_api
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${SRRV2_PORT:-8081}:8080"
     environment:
       # Conexión al Replica Set completo
-      MONGO_URI: mongodb://mongo1:27017,mongo2:27018/?replicaSet=rs0
-      DB_NAME: electoral_db
+      MONGO_URI: ${MONGO_URI:-mongodb://admin:admin123@host.docker.internal:27017/rrv?authSource=admin}
+      MONGO_DATABASE: ${MONGO_DATABASE:-rrv}
+      DB_NAME: ${MONGO_DATABASE:-rrv}
+      MONGO_RRV_COLLECTION: ${MONGO_RRV_COLLECTION:-actas_rrv}
+      MONGO_EVENTS_COLLECTION: ${MONGO_EVENTS_COLLECTION:-rrv_eventos}
       PORT: "8080"
       # ── Twilio (Sebastian — módulo RRV) ───────────────────────────────────────
       # Los valores se leen desde el archivo .env en la raíz del proyecto (no commiteado).
@@ -111,9 +120,9 @@ services:
       TWILIO_VERIFIED_NUMBER: ${TWILIO_VERIFIED_NUMBER}
       # PINs SMS extra (opcional, separados por coma)
       # VALID_PINS: "9999,8888"
-    depends_on:
-      mongo-setup:
-        condition: service_completed_successfully
+      # ── OCR: permitir reprocesar el mismo archivo (solo desarrollo/testing) ──
+      # En produccion usar OCR_ALLOW_REPROCESS=false.
+      OCR_ALLOW_REPROCESS: ${OCR_ALLOW_REPROCESS:-true}
     networks:
       - electoral_net
 

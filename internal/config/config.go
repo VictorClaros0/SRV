@@ -6,6 +6,8 @@ import "os"
 type Config struct {
 	MongoURI           string
 	DBName             string
+	RRVCollection      string
+	EventsCollection   string
 	Port               string
 	TwilioAccountSID   string
 	TwilioAuthToken    string
@@ -19,7 +21,9 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		MongoURI:           getEnv("MONGO_URI", "mongodb://localhost:27017"),
-		DBName:             getEnv("DB_NAME", "electoral_db"),
+		DBName:             getEnv("MONGO_DATABASE", getEnv("DB_NAME", "electoral_db")),
+		RRVCollection:      getEnv("MONGO_RRV_COLLECTION", "actas_rrv"),
+		EventsCollection:   getEnv("MONGO_EVENTS_COLLECTION", "rrv_eventos"),
 		Port:               getEnv("PORT", "8080"),
 		TwilioAccountSID:   getEnv("TWILIO_ACCOUNT_SID", ""),
 		TwilioAuthToken:    getEnv("TWILIO_AUTH_TOKEN", ""),

@@ -27,8 +27,6 @@ const (
 	twimlEmpty     = "<Response/>"
 )
 
-// validPINs is the set of accepted SMS security PINs (pre-distributed to mesa officials).
-// Additional PINs can be injected via env var VALID_PINS=pin1,pin2,...
 var validPINs = map[string]bool{
 	"1234": true,
 	"5678": true,
@@ -54,7 +52,6 @@ func NewRRVHandler(ar *repository.RRVActaRepository, er *repository.EventoReposi
 	return &RRVHandler{actaRepo: ar, eventoRepo: er, twilio: tw}
 }
 
-// registrarEvento persists an audit event. Errors are only logged, never propagated.
 func (h *RRVHandler) registrarEvento(actaID, tipo, fuente string, payload bson.M, errMsg string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -71,15 +68,14 @@ func (h *RRVHandler) registrarEvento(actaID, tipo, fuente string, payload bson.M
 	}
 }
 
-// validarAritmetica comprueba que la suma de votos coincide con total_votos.
-// Devuelve "" si es consistente, o un mensaje de error si no.
+// validarAritmetica checks vote totals. Returns "" if consistent, error message otherwise.
 func validarAritmetica(acta *models.RRVActa) string {
-	suma := acta.VotosNulos + acta.VotosBlancos
+	sumaCand := 0
 	for _, c := range acta.Candidatos {
 		if c.Votos < 0 {
 			return fmt.Sprintf("votos negativos en candidato %s", c.CandidatoID)
 		}
-		suma += c.Votos
+		sumaCand += c.Votos
 	}
 	if acta.VotosNulos < 0 {
 		return "votos_nulos no puede ser negativo"
@@ -87,26 +83,127 @@ func validarAritmetica(acta *models.RRVActa) string {
 	if acta.VotosBlancos < 0 {
 		return "votos_blancos no puede ser negativo"
 	}
+	if acta.VotosValidos > 0 && sumaCand != acta.VotosValidos {
+		return fmt.Sprintf("suma candidatos=%d ≠ votos_validos=%d", sumaCand, acta.VotosValidos)
+	}
+	suma := sumaCand + acta.VotosNulos + acta.VotosBlancos
 	if suma != acta.TotalVotos {
 		return fmt.Sprintf("inconsistencia aritmética: suma=%d, total_votos=%d", suma, acta.TotalVotos)
 	}
 	return ""
 }
 
+func totalVotos(acta *models.RRVActa) int {
+	t := acta.VotosNulos + acta.VotosBlancos
+	for _, c := range acta.Candidatos {
+		t += c.Votos
+	}
+	return t
+}
+
+func normalizarCandidatoID(id string) string {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	switch id {
+	case "CAND-01", "CAND-1", "C1":
+		return "P1"
+	case "CAND-02", "CAND-2", "C2":
+		return "P2"
+	case "CAND-03", "CAND-3", "C3":
+		return "P3"
+	case "CAND-04", "CAND-4", "C4":
+		return "P4"
+	default:
+		return id
+	}
+}
+
+func normalizarActaRRV(acta *models.RRVActa) {
+	if acta == nil {
+		return
+	}
+	if strings.TrimSpace(acta.Provincia) == "" {
+		acta.Provincia = "(Sin provincia)"
+	}
+	if strings.TrimSpace(acta.Fuente) == "" {
+		acta.Fuente = "RRV"
+	}
+	if acta.Warnings == nil {
+		acta.Warnings = []string{}
+	}
+	if acta.Anomalies == nil {
+		acta.Anomalies = []string{}
+	}
+
+	porID := make(map[string]models.Candidato, len(acta.Candidatos)+4)
+	for _, c := range acta.Candidatos {
+		id := normalizarCandidatoID(c.CandidatoID)
+		if id == "" {
+			continue
+		}
+		c.CandidatoID = id
+		if strings.TrimSpace(c.Nombre) == "" {
+			c.Nombre = id
+		}
+		if prev, ok := porID[id]; ok {
+			prev.Votos += c.Votos
+			if strings.TrimSpace(prev.Nombre) == "" || prev.Nombre == id {
+				prev.Nombre = c.Nombre
+			}
+			porID[id] = prev
+			continue
+		}
+		porID[id] = c
+	}
+
+	defaultNames := map[string]string{
+		"P1": "Daenerys Targaryen",
+		"P2": "Sansa Stark",
+		"P3": "Robert Baratheon",
+		"P4": "Tyrion Lannister",
+	}
+	normalizados := make([]models.Candidato, 0, 4)
+	for _, id := range []string{"P1", "P2", "P3", "P4"} {
+		c, ok := porID[id]
+		if !ok {
+			c = models.Candidato{CandidatoID: id, Nombre: defaultNames[id], Votos: 0}
+		}
+		normalizados = append(normalizados, c)
+		delete(porID, id)
+	}
+	for _, c := range porID {
+		normalizados = append(normalizados, c)
+	}
+	acta.Candidatos = normalizados
+
+	// Compute VotosValidos from candidates if not already set
+	if acta.VotosValidos == 0 {
+		for _, c := range acta.Candidatos {
+			acta.VotosValidos += c.Votos
+		}
+	}
+	// Compute TotalVotos if missing
+	if acta.TotalVotos == 0 {
+		acta.TotalVotos = totalVotos(acta)
+	}
+	// Sync NroMesa ↔ Mesa
+	if acta.NroMesa == "" && acta.Mesa != "" {
+		acta.NroMesa = acta.Mesa
+	}
+	if acta.Mesa == "" && acta.NroMesa != "" {
+		acta.Mesa = acta.NroMesa
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/rrv/actas/upload
 // ──────────────────────────────────────────────────────────────────────────────
-// Acepta multipart/form-data con:
-//   - file       : imagen o PDF del acta (obligatorio)
-//   - acta_data  : JSON string con datos del acta (opcional; si ausente se simula OCR)
 func (h *RRVHandler) Upload(c *gin.Context) {
-	// 1. Leer el archivo
+	// 1. Leer archivo
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "campo 'file' requerido"})
 		return
 	}
-
 	file, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo abrir el archivo"})
@@ -120,27 +217,56 @@ func (h *RRVHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 2. Calcular hash para idempotencia
+	// 2. Hash para idempotencia
 	hash := services.HashBytes(fileBytes)
 
-	// 3. Verificar duplicado por hash (mismo archivo enviado dos veces)
+	// 3. Verificar duplicado por hash
+	//    Si OCR_ALLOW_REPROCESS=true y ?reprocess=true, se borra el registro anterior
+	//    y se reprocesa. Idempotencia normal permanece activa por defecto.
+	requestedReprocess := strings.EqualFold(c.Query("reprocess"), "true")
+	allowReprocess := strings.EqualFold(os.Getenv("OCR_ALLOW_REPROCESS"), "true")
+	reprocess := requestedReprocess && allowReprocess
+
 	dupHash, err := h.actaRepo.ExistsByHash(c.Request.Context(), hash)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if dupHash {
-		h.registrarEvento("desconocido", "DUPLICADO_HASH", "IMAGEN",
-			bson.M{"hash": hash, "filename": fileHeader.Filename},
-			"archivo ya procesado anteriormente")
-		c.JSON(http.StatusConflict, gin.H{"error": "este archivo ya fue procesado", "hash": hash})
-		return
+		if reprocess {
+			if delErr := h.actaRepo.DeleteByHash(c.Request.Context(), hash); delErr != nil {
+				log.Printf("⚠️  reprocess: error borrando acta por hash: %v", delErr)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "no se pudo preparar el reprocesamiento",
+					"hash":  hash,
+				})
+				return
+			}
+			log.Printf("🔄 Reprocesando acta hash=%s…", hash[:16])
+		} else if requestedReprocess {
+			h.registrarEvento("desconocido", "REPROCESS_DESHABILITADO", "IMAGEN",
+				bson.M{"hash": hash, "filename": fileHeader.Filename},
+				"OCR_ALLOW_REPROCESS=false")
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "reprocess=true solicitado, pero OCR_ALLOW_REPROCESS=false; no se omite idempotencia",
+				"hash":  hash,
+			})
+			return
+		} else {
+			h.registrarEvento("desconocido", "DUPLICADO_HASH", "IMAGEN",
+				bson.M{"hash": hash, "filename": fileHeader.Filename},
+				"archivo ya procesado anteriormente")
+			c.JSON(http.StatusConflict, gin.H{"error": "este archivo ya fue procesado", "hash": hash})
+			return
+		}
 	}
 
-	// 4. Obtener datos del acta (OCR real simulado o datos provistos)
+	// 4. Obtener datos del acta: MANUAL o pipeline OCR
 	var acta *models.RRVActa
+	var ocrReport services.OCRReport
+
 	if raw := c.PostForm("acta_data"); raw != "" {
-		// Datos provistos manualmente (simula resultado de OCR externo)
+		// Modo MANUAL — datos provistos por el usuario
 		acta = &models.RRVActa{}
 		if err := json.Unmarshal([]byte(raw), acta); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "acta_data JSON inválido: " + err.Error()})
@@ -148,10 +274,22 @@ func (h *RRVHandler) Upload(c *gin.Context) {
 		}
 		acta.TipoEntrada = "IMAGEN"
 		acta.Fuente = "RRV"
+		acta.OCRMode = "MANUAL"
+		acta.Confidence = 1.0
+		ocrReport = services.OCRReport{
+			Mode:       "MANUAL",
+			Confidence: 1.0,
+			Warnings:   []string{},
+			Anomalies:  []string{},
+		}
 	} else {
-		// OCR simulado
-		acta = services.SimulateOCR(fileBytes)
+		// Pipeline OCR — intenta leer el documento real
+		acta, ocrReport, _ = services.ProcessActa(fileBytes, fileHeader.Filename)
+		log.Printf("🔍 OCR acta=%s mode=%s confidence=%.2f requires_review=%v",
+			acta.ActaID, ocrReport.Mode, ocrReport.Confidence, ocrReport.RequiresReview)
 	}
+
+	normalizarActaRRV(acta)
 	acta.HashOrigen = hash
 	acta.FechaRecepcion = time.Now()
 
@@ -169,14 +307,15 @@ func (h *RRVHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 6. Validar aritmética
-	if msg := validarAritmetica(acta); msg != "" {
-		acta.Estado = "INCONSISTENTE"
-		h.registrarEvento(acta.ActaID, "INCONSISTENCIA_ARITMETICA", "IMAGEN",
-			bson.M{"acta_id": acta.ActaID, "detalle": msg}, msg)
-		log.Printf("⚠️  INCONSISTENCIA_ARITMETICA acta=%s: %s", acta.ActaID, msg)
-	} else {
-		acta.Estado = "PROCESADA"
+	// 6. Para MANUAL: validar aritmética (el OCR pipeline ya lo hizo internamente)
+	if acta.OCRMode == "MANUAL" {
+		if msg := validarAritmetica(acta); msg != "" {
+			acta.Estado = "INCONSISTENTE"
+			ocrReport.Warnings = append(ocrReport.Warnings, msg)
+			ocrReport.Anomalies = append(ocrReport.Anomalies, "INCONSISTENCIA_ARITMETICA")
+		} else {
+			acta.Estado = "PROCESADA"
+		}
 	}
 
 	// 7. Guardar en MongoDB
@@ -186,16 +325,128 @@ func (h *RRVHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	h.registrarEvento(saved.ActaID, "ACTA_RECIBIDA", "IMAGEN",
-		bson.M{"acta_id": saved.ActaID, "estado": saved.Estado, "hash": hash}, "")
+	// 8. Registrar eventos OCR
+	h.registrarEventosOCR(saved, ocrReport, hash)
+	if reprocess {
+		h.registrarEvento(saved.ActaID, "ACTA_REPROCESADA", "IMAGEN",
+			bson.M{"acta_id": saved.ActaID, "hash": hash, "filename": fileHeader.Filename},
+			"reprocesamiento solicitado")
+	}
 
-	c.JSON(http.StatusCreated, saved)
+	// 9. Responder con formato enriquecido
+	msg := "Acta procesada"
+	if saved.RequiresReview {
+		msg = "Acta procesada con baja confianza; requiere revisión"
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"message": msg,
+		"acta":    saved,
+		"ocr": gin.H{
+			"mode":            ocrReport.Mode,
+			"confidence":      ocrReport.Confidence,
+			"requires_review": ocrReport.RequiresReview,
+			"warnings":        ocrReport.Warnings,
+			"anomalies":       ocrReport.Anomalies,
+		},
+	})
+}
+
+// registrarEventosOCR emite los eventos de auditoría correspondientes al resultado del OCR.
+func (h *RRVHandler) registrarEventosOCR(acta *models.RRVActa, report services.OCRReport, hash string) {
+	base := bson.M{
+		"acta_id":    acta.ActaID,
+		"hash":       hash,
+		"ocr_mode":   report.Mode,
+		"confidence": report.Confidence,
+	}
+
+	switch report.Mode {
+	case "PDF_TEXT":
+		h.registrarEvento(acta.ActaID, "OCR_PDF_TEXT_EXTRAIDO", "IMAGEN", base, "")
+		if report.RequiresReview {
+			h.registrarEvento(acta.ActaID, "OCR_PARSE_PARCIAL", "IMAGEN",
+				mergeBSON(base, bson.M{"warnings": report.Warnings}), "")
+			h.registrarEvento(acta.ActaID, "OCR_BAJA_CONFIANZA", "IMAGEN",
+				mergeBSON(base, bson.M{"confidence": report.Confidence}), "")
+		} else {
+			h.registrarEvento(acta.ActaID, "OCR_PARSE_OK", "IMAGEN", base, "")
+		}
+
+	case "PDF_IMAGE_OCR", "IMAGE_OCR", "PDF_REGION_OCR":
+		h.registrarEvento(acta.ActaID, "OCR_PDF_TEXT_FALLIDO", "IMAGEN", base, "")
+		if services.ContainsAnomaly(report.Anomalies, "OCR_IMAGE_RENDER_OK") {
+			h.registrarEvento(acta.ActaID, "OCR_IMAGE_RENDER_OK", "IMAGEN", base, "")
+		}
+		if services.ContainsAnomaly(report.Anomalies, "OCR_TESSERACT_OK") {
+			h.registrarEvento(acta.ActaID, "OCR_TESSERACT_OK", "IMAGEN", base, "")
+		} else {
+			h.registrarEvento(acta.ActaID, "OCR_TESSERACT_ERROR", "IMAGEN", base,
+				"tesseract no produjo texto reconocible")
+		}
+		if services.ContainsAnomaly(report.Anomalies, "OCR_REGION_OK") {
+			h.registrarEvento(acta.ActaID, "OCR_REGION_OK", "IMAGEN", base, "")
+		}
+		if report.RequiresReview {
+			h.registrarEvento(acta.ActaID, "OCR_PARSE_PARCIAL", "IMAGEN",
+				mergeBSON(base, bson.M{"warnings": report.Warnings}), "")
+			h.registrarEvento(acta.ActaID, "OCR_BAJA_CONFIANZA", "IMAGEN",
+				mergeBSON(base, bson.M{"confidence": report.Confidence}), "")
+		} else {
+			h.registrarEvento(acta.ActaID, "OCR_PARSE_OK", "IMAGEN", base, "")
+		}
+
+	case "SIMULATED_FALLBACK":
+		h.registrarEvento(acta.ActaID, "OCR_PDF_TEXT_FALLIDO", "IMAGEN", base, "")
+		if services.ContainsAnomaly(report.Anomalies, "OCR_IMAGE_RENDER_OK") {
+			h.registrarEvento(acta.ActaID, "OCR_IMAGE_RENDER_OK", "IMAGEN", base, "")
+		}
+		if services.ContainsAnomaly(report.Anomalies, "OCR_TESSERACT_OK") {
+			h.registrarEvento(acta.ActaID, "OCR_TESSERACT_OK", "IMAGEN", base, "")
+		}
+		if services.ContainsAnomaly(report.Anomalies, "OCR_TESSERACT_ERROR") ||
+			services.ContainsAnomaly(report.Anomalies, "OCR_VISUAL_ERROR") {
+			h.registrarEvento(acta.ActaID, "OCR_TESSERACT_ERROR", "IMAGEN", base,
+				"tesseract/pdftoppm no produjo texto parseable")
+		}
+		if services.ContainsAnomaly(report.Anomalies, "OCR_VISUAL_PARCIAL") {
+			h.registrarEvento(acta.ActaID, "OCR_PARSE_PARCIAL", "IMAGEN",
+				mergeBSON(base, bson.M{"warnings": report.Warnings}), "")
+		}
+		h.registrarEvento(acta.ActaID, "OCR_SIMULADO_USADO", "IMAGEN",
+			mergeBSON(base, bson.M{"advertencia": "datos simulados, no OCR real"}), "")
+	case "MANUAL":
+		h.registrarEvento(acta.ActaID, "ACTA_INGRESO_MANUAL", "IMAGEN", base, "")
+	}
+
+	switch acta.Estado {
+	case "PROCESADA":
+		h.registrarEvento(acta.ActaID, "ACTA_PROCESADA", "IMAGEN",
+			mergeBSON(base, bson.M{"estado": acta.Estado}), "")
+	case "INCONSISTENTE":
+		h.registrarEvento(acta.ActaID, "ACTA_INCONSISTENTE", "IMAGEN",
+			mergeBSON(base, bson.M{"warnings": report.Warnings}),
+			"inconsistencia aritmética detectada")
+	case "REQUIERE_REVISION":
+		h.registrarEvento(acta.ActaID, "ACTA_REQUIERE_REVISION", "IMAGEN",
+			mergeBSON(base, bson.M{"confidence": report.Confidence, "warnings": report.Warnings}), "")
+	}
+}
+
+func mergeBSON(base, extra bson.M) bson.M {
+	result := bson.M{}
+	for k, v := range base {
+		result[k] = v
+	}
+	for k, v := range extra {
+		result[k] = v
+	}
+	return result
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/rrv/sms
 // ──────────────────────────────────────────────────────────────────────────────
-// Body JSON: { "mensaje": "ACTA:ACTA-001|DEP:La Paz|...|PIN:1234" }
 func (h *RRVHandler) SMS(c *gin.Context) {
 	var body struct {
 		Mensaje string `json:"mensaje" binding:"required"`
@@ -205,7 +456,6 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 		return
 	}
 
-	// 1. Hash del mensaje completo para detectar mensajes idénticos
 	msgHash := services.HashBytes([]byte(body.Mensaje))
 	dupMsg, err := h.actaRepo.ExistsByHash(c.Request.Context(), msgHash)
 	if err != nil {
@@ -219,7 +469,6 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 		return
 	}
 
-	// 2. Parsear el mensaje
 	acta, parseErr := parseSMS(body.Mensaje)
 	if parseErr != "" {
 		h.registrarEvento("desconocido", "SMS_INVALIDO", "SMS",
@@ -229,8 +478,8 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 	}
 	acta.HashOrigen = msgHash
 	acta.FechaRecepcion = time.Now()
+	normalizarActaRRV(acta)
 
-	// 3. Verificar PIN
 	pin := extractField(body.Mensaje, "PIN")
 	if !validPINs[pin] {
 		h.registrarEvento(acta.ActaID, "PIN_INVALIDO", "SMS",
@@ -239,7 +488,6 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 		return
 	}
 
-	// 4. Verificar duplicado por acta_id
 	dupID, err := h.actaRepo.ExistsByActaID(c.Request.Context(), acta.ActaID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -252,7 +500,6 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 		return
 	}
 
-	// 5. Validar aritmética
 	if msg := validarAritmetica(acta); msg != "" {
 		acta.Estado = "INCONSISTENTE"
 		h.registrarEvento(acta.ActaID, "INCONSISTENCIA_ARITMETICA", "SMS",
@@ -262,7 +509,6 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 		acta.Estado = "PROCESADA"
 	}
 
-	// 6. Guardar
 	saved, err := h.actaRepo.Create(c.Request.Context(), acta)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -272,21 +518,17 @@ func (h *RRVHandler) SMS(c *gin.Context) {
 	h.registrarEvento(saved.ActaID, "ACTA_RECIBIDA", "SMS",
 		bson.M{"acta_id": saved.ActaID, "estado": saved.Estado}, "")
 
-	// Confirmación Twilio (no bloqueante)
 	if h.twilio != nil {
 		go h.twilio.SendConfirmation("", fmt.Sprintf(
 			"✅ SRRV: Acta %s recibida por SMS. Estado: %s", saved.ActaID, saved.Estado,
 		))
 	}
-
 	c.JSON(http.StatusCreated, saved)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// POST /api/rrv/webhook/sms  — Webhook para Twilio
+// POST /api/rrv/webhook/sms
 // ──────────────────────────────────────────────────────────────────────────────
-// Twilio llama a este endpoint cuando llega un SMS al número virtual.
-// Envía form-encoded: Body=<texto>, From=<numero>, To=<nuestro numero>, etc.
 func (h *RRVHandler) WebhookSMS(c *gin.Context) {
 	mensaje := strings.TrimSpace(c.PostForm("Body"))
 	from := c.PostForm("From")
@@ -301,8 +543,6 @@ func (h *RRVHandler) WebhookSMS(c *gin.Context) {
 	twimlOK(c)
 }
 
-// procesarWebhookSMS contiene la lógica de negocio del webhook: valida, deduplica y persiste.
-// Devuelve el mensaje de confirmación a enviar (vacío si no aplica) y un error interno si lo hay.
 func (h *RRVHandler) procesarWebhookSMS(ctx context.Context, mensaje, from string) (string, error) {
 	if mensaje == "" {
 		return "", nil
@@ -327,6 +567,7 @@ func (h *RRVHandler) procesarWebhookSMS(ctx context.Context, mensaje, from strin
 	}
 	acta.HashOrigen = msgHash
 	acta.FechaRecepcion = time.Now()
+	normalizarActaRRV(acta)
 
 	if !validPINs[extractField(mensaje, "PIN")] {
 		h.registrarEvento(acta.ActaID, "PIN_INVALIDO", "TWILIO_WEBHOOK",
@@ -364,7 +605,6 @@ func (h *RRVHandler) procesarWebhookSMS(ctx context.Context, mensaje, from strin
 		saved.ActaID, saved.Estado, saved.TotalVotos), nil
 }
 
-// twimlOK responde con TwiML vacío — Twilio requiere 200 con XML aunque no se quiera responder con otro SMS.
 func twimlOK(c *gin.Context) {
 	c.Header(hdrContentType, mimeXML)
 	c.String(http.StatusOK, twimlEmpty)
@@ -411,9 +651,8 @@ func (h *RRVHandler) GetEventos(c *gin.Context) {
 	c.JSON(http.StatusOK, eventos)
 }
 
-// ─── Helpers de SMS ───────────────────────────────────────────────────────────
+// ─── SMS helpers ──────────────────────────────────────────────────────────────
 
-// extractField devuelve el valor de un campo clave:valor en el mensaje pipe-separado.
 func extractField(msg, key string) string {
 	for _, part := range strings.Split(msg, "|") {
 		kv := strings.SplitN(part, ":", 2)
@@ -424,13 +663,14 @@ func extractField(msg, key string) string {
 	return ""
 }
 
-// parseSMS parsea el formato pipe-separado y devuelve un RRVActa o un mensaje de error.
-// Formato: ACTA:id|DEP:dpto|MUN:mun|REC:recinto|MESA:mesa|C1:v|C2:v|...|NULOS:n|BLANCOS:b|TOTAL:t|PIN:pin
+// parseSMS parses the pipe-separated SMS format into an RRVActa.
+// Format: ACTA:id|DEP:dpto|PROV:prov|MUN:mun|REC:recinto|MESA:mesa|C1:v|C2:v|...|NULOS:n|BLANCOS:b|TOTAL:t|PIN:pin
 func parseSMS(msg string) (*models.RRVActa, string) {
 	get := func(key string) string { return extractField(msg, key) }
 
 	actaID := get("ACTA")
 	dep := get("DEP")
+	prov := get("PROV")
 	mun := get("MUN")
 	rec := get("REC")
 	mesa := get("MESA")
@@ -438,7 +678,6 @@ func parseSMS(msg string) (*models.RRVActa, string) {
 	blancosStr := get("BLANCOS")
 	totalStr := get("TOTAL")
 
-	// Campos obligatorios de ubicación
 	switch "" {
 	case actaID:
 		return nil, "campo ACTA requerido"
@@ -471,7 +710,6 @@ func parseSMS(msg string) (*models.RRVActa, string) {
 		return nil, "TOTAL debe ser un entero no negativo"
 	}
 
-	// Extraer candidatos C1, C2, ... de forma dinámica
 	var candidatos []models.Candidato
 	for i := 1; ; i++ {
 		vStr := get(fmt.Sprintf("C%d", i))
@@ -492,18 +730,23 @@ func parseSMS(msg string) (*models.RRVActa, string) {
 		return nil, "se requiere al menos un candidato (C1)"
 	}
 
-	acta := &models.RRVActa{
+	return &models.RRVActa{
 		ActaID:       actaID,
 		Departamento: dep,
+		Provincia:    prov,
 		Municipio:    mun,
 		Recinto:      rec,
 		Mesa:         mesa,
+		NroMesa:      mesa,
 		Candidatos:   candidatos,
 		VotosNulos:   nulos,
 		VotosBlancos: blancos,
 		TotalVotos:   total,
 		Fuente:       "RRV",
 		TipoEntrada:  "SMS",
-	}
-	return acta, ""
+		OCRMode:      "MANUAL",
+		Confidence:   1.0,
+		Warnings:     []string{},
+		Anomalies:    []string{},
+	}, ""
 }
