@@ -50,7 +50,7 @@ Todos los servicios deben estar en estado `Up`.
 |------------|------------------------------|---------------------------------|
 | Frontend   | http://localhost:3010        | Interfaz web principal          |
 | API        | http://localhost:8090        | REST API (Go)                   |
-| n8n        | http://localhost:5690        | Editor de workflows             |
+| n8n        | http://localhost:5678        | Editor de workflows             |
 | PostgreSQL | localhost:5434               | Acceso directo a la base de datos |
 
 ### 4. Primer acceso
@@ -63,7 +63,7 @@ Al arrancar por primera vez el sistema carga automáticamente los datos de los C
 
 ---
 
-## Guía de n8n para pruebas (para Pablo)
+## Guía de n8n
 
 ### ¿Qué es n8n aquí?
 
@@ -71,7 +71,7 @@ n8n es la herramienta que simula a un operador humano transcribiendo actas. Cuan
 
 ### Paso 1 — Abrir n8n
 
-Ir a **http://localhost:5690** e ingresar con:
+Ir a **http://localhost:5678** e ingresar con:
 - **Usuario:** `admin`
 - **Contraseña:** `admin123`
 
@@ -129,7 +129,7 @@ Browser (puerto 3010)
 Frontend React + Nginx
   ├── /api/*          → proxy → API Go (puerto 8090)
   ├── /webhook/*      → proxy → API Go (puerto 8090)
-  └── /n8n/*          → proxy → n8n (puerto 5690)
+  └── /n8n/*          → proxy → n8n (puerto 5678)
                                   │
                          Workflow de transcripción
                                   │
@@ -147,74 +147,7 @@ Frontend React + Nginx
 | frontend  | 3010        | React + Nginx (proxy hacia api/n8n) |
 | api       | 8090        | Go REST API                         |
 | pgpool    | 5434        | PostgreSQL HA (punto de entrada)    |
-| n8n       | 5690        | Automatización de transcripción     |
-
----
-
-## Requisitos
-
-- Docker y Docker Compose v2
-- (Opcional) Go 1.22+ para desarrollo sin Docker
-
----
-
-## Levantar el proyecto
-
-### 1. Variables de entorno
-
-```bash
-cp .env.example .env
-```
-
-Editar `.env` con valores seguros para producción:
-
-```env
-POSTGRESQL_POSTGRES_PASSWORD=postgres_admin_secret
-POSTGRESQL_USERNAME=votos
-POSTGRESQL_PASSWORD=votos_db_secret
-POSTGRESQL_DATABASE=votos
-REPMGR_PASSWORD=repmgr_secret
-PGPOOL_ADMIN_PASSWORD=pgpool_admin_secret
-PGPOOL_HOST_PORT=5433
-API_PORT=8080
-FRONTEND_PORT=3000
-N8N_PORT=5678
-JWT_SECRET=cambiar_por_secreto_largo_y_aleatorio_de_minimo_32_chars
-ADMIN_USER=admin
-ADMIN_PASSWORD=admin123
-CORS_ORIGINS=http://localhost:3000
-N8N_USER=admin
-N8N_PASSWORD=n8n_secret
-N8N_HOST=localhost
-```
-
-### 2. Iniciar todos los servicios
-
-```bash
-docker compose up -d --build
-```
-
-### 3. Verificar que está corriendo
-
-```bash
-# Salud de la API
-curl http://localhost:8080/health
-
-# Respuesta esperada:
-# {"database":"up","status":"ok"}
-```
-
-### 4. Al arrancar, el sistema automáticamente:
-
-1. Conecta a PostgreSQL vía Pgpool
-2. Ejecuta migraciones (crea tablas)
-3. Crea el usuario **admin** (credenciales del `.env`)
-4. Importa `DistribucionTerritorial.csv` → tabla `distribucion_territorial`
-5. Importa `RecintosElectorales.csv` → tabla `recinto_electoral`
-6. Importa `Mesas.csv` → tabla `mesa`
-7. Importa `ActasImpresas.csv` → tabla `acta` con **estado = "impresa"** y votos en cero
-
-> Los votos no se cargan en el seed. La transcripción la simula **n8n** leyendo `Transcripciones.csv`.
+| n8n       | 5678        | Automatización de transcripción     |
 
 ---
 
@@ -428,7 +361,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ### 3. Disparar simulación de n8n manualmente
 
 ```bash
-curl -s -X POST http://localhost:5690/webhook/trigger-transcripcion \
+curl -s -X POST http://localhost:5678/webhook/trigger-transcripcion \
   -H "Content-Type: application/json" -d '{}'
 ```
 
