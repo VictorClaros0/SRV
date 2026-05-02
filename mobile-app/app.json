@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "RRV Scanner",
+    "slug": "rrv-scanner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": false },
+    "android": {
+      "package": "com.rrv.scanner",
+      "adaptiveIcon": { "backgroundColor": "#1a1a2e" }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceso a la galería para seleccionar actas electorales.",
+          "cameraPermission": "La app necesita la cámara para fotografiar actas electorales."
+        }
+      ]
+    ]
+  }
+}

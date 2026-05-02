@@ -92,6 +92,16 @@ export const api = {
     getTecnico: () => request('GET', '/dashboard/tecnico'),
     getInconsistencias: () => request('GET', '/dashboard/inconsistencias'),
     getEventosRRV: () => request('GET', '/dashboard/eventos-rrv'),
+    getMobileScans: () => request('GET', '/dashboard/mobile-scans'),
+  },
+
+  // ─── Canal SMS ───────────────────────────────────────────────────────────────
+
+  sms: {
+    getNumeros: () => request('GET', '/rrv/sms/numeros'),
+    addNumero: (numero) => request('POST', '/rrv/sms/numeros', { numero }),
+    removeNumero: (numero) => request('DELETE', `/rrv/sms/numeros/${encodeURIComponent(numero)}`),
+    getHistorial: () => request('GET', '/rrv/sms/historial'),
   },
 
   // ─── Comparación RRV vs Oficial ──────────────────────────────────────────────

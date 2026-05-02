@@ -28,6 +28,7 @@ const LINKS = [
   { to: '/scanner',         label: 'Scanner' },
   { to: '/inconsistencias', label: 'Inconsistencias' },
   { to: '/actas',           label: 'Actas' },
+  { to: '/sms',             label: 'SMS' },
 ]
 
 export default function Layout() {

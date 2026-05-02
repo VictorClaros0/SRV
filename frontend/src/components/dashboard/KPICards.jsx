@@ -1,14 +1,11 @@
 import React from 'react'
 
 const cards = [
-  { key: 'total_actas_rrv',         label: 'Total Actas RRV',          color: '#f97316' },
-  { key: 'total_actas_oficial',      label: 'Total Actas Oficial',       color: '#3b82f6' },
-  { key: 'actas_consistentes',       label: 'Consistentes',              color: '#22c55e' },
-  { key: 'actas_inconsistentes',     label: 'Inconsistentes',            color: '#ef4444' },
-  { key: 'actas_solo_rrv',           label: 'Solo RRV',                  color: '#f97316' },
-  { key: 'actas_solo_oficial',       label: 'Solo Oficial',              color: '#94a3b8' },
-  { key: 'confiabilidad_rrv',        label: 'Confiabilidad RRV (%)',     color: '#1a1a2e', format: 'pct' },
-  { key: 'diferencia_total_votos',   label: 'Diferencia Total Votos',    color: '#7c3aed' },
+  { key: 'total_actas_rrv',      label: 'Total Actas RRV',       color: '#f97316' },
+  { key: 'total_actas_oficial',  label: 'Total Actas Oficial',   color: '#3b82f6' },
+  { key: 'actas_solo_rrv',       label: 'Solo RRV',              color: '#f97316' },
+  { key: 'actas_solo_oficial',   label: 'Solo Oficial',          color: '#94a3b8' },
+  { key: 'confiabilidad_rrv',    label: 'Confiabilidad RRV (%)', color: '#1a1a2e', format: 'pct' },
 ]
 
 const s = {

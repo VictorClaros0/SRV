@@ -10,6 +10,8 @@ import (
 	"github.com/srvof/votos-backend/dashboard"
 	"github.com/srvof/votos-backend/handlers"
 	"github.com/srvof/votos-backend/middleware"
+	"github.com/srvof/votos-backend/rrv"
+	"github.com/srvof/votos-backend/sms"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gorm.io/gorm"
 )
@@ -26,6 +28,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Cl
 	actaH := &handlers.ActaHandler{DB: db}
 	resH := &handlers.ResultadosHandler{DB: db}
 	scannerH := &handlers.ScannerHandler{DB: db}
+	ocrH := &handlers.OCRVisionHandler{DB: db}
 	transcripcionH := &handlers.TranscripcionHandler{DB: db, N8NWebhookURL: cfg.N8NWebhookURL}
 
 	r.GET("/health", health(db))
@@ -78,6 +81,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Cl
 	protected.GET("/auditoria", resH.Auditoria)
 
 	protected.POST("/scanner/transcribir", scannerH.Transcribir)
+	protected.POST("/scanner/ocr-vision", ocrH.Process)
 
 	// Transcripción: frontend → backend → n8n → backend webhook → PostgreSQL
 	// Con ?fallback=true usa Transcripciones.csv directamente si n8n no está disponible
@@ -88,6 +92,21 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config, mongoClient *mongo.Cl
 
 	// Dashboard endpoints listos para Chart.js (solo lectura / CQRS Query)
 	dashboard.RegisterRoutes(protected, db, mongoClient, cfg.MongoDBName, cfg.MongoRRVCollections, cfg.MongoEventsCollection)
+
+	// Canal SMS: inbound webhook (público) + gestión de números autorizados (JWT)
+	sms.RegisterRoutes(r, protected, mongoClient, cfg)
+
+	// Scanner RRV: guarda actas OCR en MongoDB (flujo conteo rápido). Público para móvil.
+	scanH := &rrv.ScanHandler{
+		MongoClient: mongoClient,
+		DBName:      cfg.MongoDBName,
+		Collection:  cfg.MongoRRVCollections[0],
+		LogPath:     "data/logs",
+	}
+	r.GET("/api/v1/rrv/scan/check", scanH.CheckDuplicate)
+	r.POST("/api/v1/rrv/scan", scanH.SaveScan)
+	r.POST("/api/v1/rrv/scan/observada", scanH.SaveObservada)
+	r.POST("/api/v1/rrv/scan/rechazada", scanH.SaveRechazada)
 }
 
 func corsMiddleware(allowed string) gin.HandlerFunc {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 
@@ -31,11 +31,15 @@ const s = {
 }
 
 export default function Login() {
-  const [usuario, setUsuario] = useState('')
-  const [contrasena, setContrasena] = useState('')
+  const [usuario, setUsuario] = useState('admin')
+  const [contrasena, setContrasena] = useState('admin123')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
+
+  useEffect(() => {
+    handleSubmit({ preventDefault: () => {} })
+  }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()

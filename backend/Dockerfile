@@ -17,9 +17,9 @@ WORKDIR /app
 
 COPY --from=builder /votos-api /app/votos-api
 COPY data /app/data
+RUN mkdir -p /app/data/logs
 
 ENV PORT=8080
 EXPOSE 8080
 
-USER 65534:65534
 ENTRYPOINT ["/app/votos-api"]

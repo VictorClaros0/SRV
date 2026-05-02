@@ -21,4 +21,5 @@ func RegisterRoutes(protected *gin.RouterGroup, db *gorm.DB, mongoClient *mongo.
 	d.GET("/tecnico", h.Tecnico)
 	d.GET("/inconsistencias", h.Inconsistencias)
 	d.GET("/eventos-rrv", h.EventosRRV)
+	d.GET("/mobile-scans", h.MobileScans)
 }

@@ -5,11 +5,10 @@ import ErrorState from '../components/ErrorState.jsx'
 import KPICards from '../components/dashboard/KPICards.jsx'
 import RRVvsOficialChart from '../components/dashboard/RRVvsOficialChart.jsx'
 import VotosCandidatoChart from '../components/dashboard/VotosCandidatoChart.jsx'
-import ParticipacionChart from '../components/dashboard/ParticipacionChart.jsx'
+import VotosDistribucionChart from '../components/dashboard/VotosDistribucionChart.jsx'
+import MobileScansPanel from '../components/dashboard/MobileScansPanel.jsx'
 import GeograficoPanel from '../components/dashboard/GeograficoPanel.jsx'
 import TecnicoPanel from '../components/dashboard/TecnicoPanel.jsx'
-import InconsistenciasTable from '../components/InconsistenciasTable.jsx'
-import ModalDetalleActa from '../components/dashboard/ModalDetalleActa.jsx'
 import ResultadosOficialesPanel from '../components/dashboard/ResultadosOficialesPanel.jsx'
 import AuditoriaOficialPanel from '../components/dashboard/AuditoriaOficialPanel.jsx'
 import EventosRRVPanel from '../components/dashboard/EventosRRVPanel.jsx'
@@ -33,28 +32,23 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState(null)
   const [rrv, setRrv] = useState(null)
   const [votos, setVotos] = useState(null)
-  const [part, setPart] = useState(null)
   const [tecnico, setTecnico] = useState(null)
-  const [inconsistencias, setInconsistencias] = useState(null)
   const [resultadosOficiales, setResultadosOficiales] = useState(null)
   const [auditoriaOficial, setAuditoriaOficial] = useState(null)
   const [eventosRRV, setEventosRRV] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [modalActaId, setModalActaId] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [k, r, v, p, t, inc, ro, ao, ev] = await Promise.all([
+      const [k, r, v, t, ro, ao, ev] = await Promise.all([
         api.dashboard.getKPIs(),
         api.dashboard.getRRVvsOficial(),
         api.dashboard.getVotosCandidato(),
-        api.dashboard.getParticipacion(),
         api.dashboard.getTecnico(),
-        api.dashboard.getInconsistencias(),
         api.oficial.getResultados(),
         api.oficial.getAuditoria(),
         api.dashboard.getEventosRRV(),
@@ -62,9 +56,7 @@ export default function DashboardPage() {
       setKpis(k)
       setRrv(r)
       setVotos(v)
-      setPart(p)
       setTecnico(t)
-      setInconsistencias(inc)
       setResultadosOficiales(ro)
       setAuditoriaOficial(ao)
       setEventosRRV(ev)
@@ -80,8 +72,6 @@ export default function DashboardPage() {
 
   if (loading) return <LoadingState message="Cargando dashboard..." />
   if (error) return <ErrorState message={error} onRetry={load} />
-
-  const incRows = inconsistencias?.inconsistencias || []
 
   return (
     <div style={s.page}>
@@ -102,10 +92,15 @@ export default function DashboardPage() {
         <VotosCandidatoChart data={votos} />
       </div>
 
-      {/* Participación + Técnico */}
+      {/* Distribución de votos + Técnico */}
       <div style={s.grid2}>
-        <ParticipacionChart data={part} />
+        <VotosDistribucionChart data={votos} />
         <TecnicoPanel data={tecnico} />
+      </div>
+
+      {/* Escaneos desde app móvil (Firebase) */}
+      <div style={{ marginBottom: 16 }}>
+        <MobileScansPanel />
       </div>
 
       {/* Geográfico — maneja su propio estado */}
@@ -121,27 +116,6 @@ export default function DashboardPage() {
       <div style={{ marginBottom: 16 }}>
         <EventosRRVPanel data={eventosRRV} />
       </div>
-
-      {/* Inconsistencias */}
-      <div style={s.sectionTitle}>
-        Inconsistencias detectadas
-        {incRows.length > 0 && (
-          <span style={{ fontSize: 13, color: '#888', fontWeight: 400, marginLeft: 8 }}>
-            ({incRows.length})
-          </span>
-        )}
-      </div>
-      <InconsistenciasTable
-        rows={incRows}
-        total={incRows.length}
-        pagina={1}
-        porPagina={incRows.length || 1}
-        onVerDetalle={setModalActaId}
-      />
-
-      {modalActaId && (
-        <ModalDetalleActa actaId={modalActaId} onClose={() => setModalActaId(null)} />
-      )}
     </div>
   )
 }

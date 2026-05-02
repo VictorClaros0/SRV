@@ -234,10 +234,10 @@ func normalizarCandidatosRRV(raw []candidatoMongo) []CandidatoVotos {
 	}
 
 	defaultNames := map[string]string{
-		"P1": "Partido P1",
-		"P2": "Partido P2",
-		"P3": "Partido P3",
-		"P4": "Partido P4",
+		"P1": "Daenerys Targaryen",
+		"P2": "Sansa Stark",
+		"P3": "Robert Baratheon",
+		"P4": "Tyrion Lannister",
 	}
 	result := make([]CandidatoVotos, 0, len(porID)+4)
 	for _, id := range []string{"P1", "P2", "P3", "P4"} {
@@ -285,13 +285,11 @@ func totalCandidatos(candidatos []CandidatoVotos) int {
 }
 
 func normalizarOficial(row actaOficialPG) ActaFuente {
-	// P1-P4 corresponden a los 4 partidos registrados en el sistema oficial.
-	// Para comparar con RRV se usa total general: validos + blancos + nulos.
 	candidatos := []CandidatoVotos{
-		{CandidatoID: "P1", Nombre: "Partido P1", Votos: row.P1},
-		{CandidatoID: "P2", Nombre: "Partido P2", Votos: row.P2},
-		{CandidatoID: "P3", Nombre: "Partido P3", Votos: row.P3},
-		{CandidatoID: "P4", Nombre: "Partido P4", Votos: row.P4},
+		{CandidatoID: "P1", Nombre: "Daenerys Targaryen", Votos: row.P1},
+		{CandidatoID: "P2", Nombre: "Sansa Stark", Votos: row.P2},
+		{CandidatoID: "P3", Nombre: "Robert Baratheon", Votos: row.P3},
+		{CandidatoID: "P4", Nombre: "Tyrion Lannister", Votos: row.P4},
 	}
 	return ActaFuente{
 		ActaID:       strconv.FormatInt(row.CodigoActa, 10),

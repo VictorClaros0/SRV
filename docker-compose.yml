@@ -83,6 +83,8 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-8080}:8080"
+    volumes:
+      - ./data/logs:/app/data/logs
     environment:
       - PORT=8080
       - DB_HOST=pgpool
@@ -100,6 +102,7 @@ services:
       - MONGO_RRV_COLLECTIONS=${MONGO_RRV_COLLECTIONS:-actas_rrv,rrv_actas}
       - MONGO_EVENTS_COLLECTION=${MONGO_EVENTS_COLLECTION:-rrv_eventos}
       - N8N_TRIGGER_WEBHOOK_URL=${N8N_TRIGGER_WEBHOOK_URL:-http://n8n:5678/webhook/trigger-transcripcion}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       pgpool:
         condition: service_healthy

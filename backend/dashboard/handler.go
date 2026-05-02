@@ -190,52 +190,116 @@ func (h *Handler) VotosCandidato(c *gin.Context) {
 
 // ─── GET /api/v1/dashboard/participacion ──────────────────────────────────────
 //
-// Calcula participación por departamento.
-// Como la BD oficial no tiene ciudadanos_habilitados por departamento en un join
-// funcional, devuelve available=false con un mensaje claro para el frontend.
-// Si en el futuro el join se repara, este endpoint se activa sin cambiar el contrato.
+// Calcula participación desde MongoDB (RRV) agrupada por departamento.
+// Deriva el departamento de los primeros 2 dígitos del código de mesa (PNRE Bolivia).
 
 func (h *Handler) Participacion(c *gin.Context) {
-	// Intentar cálculo de participación global desde PostgreSQL
-	type resultado struct {
-		TotalHabilitados int64 `gorm:"column:total_habilitados"`
-		TotalVotos       int64 `gorm:"column:total_votos"`
-	}
-	var res resultado
-	err := h.db.Raw(`
-		SELECT
-			COALESCE(SUM(m.cantidad_habilitada), 0) AS total_habilitados,
-			COALESCE(SUM(a.votos_validos + a.votos_nulos + a.votos_blanco), 0) AS total_votos
-		FROM mesa m
-		LEFT JOIN acta a ON a.id_mesa = m.id
-		WHERE a.fecha_eliminado IS NULL OR a.fecha_eliminado IS NOT NULL
-	`).Scan(&res).Error
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
 
-	if err != nil || res.TotalHabilitados == 0 {
+	type docPart struct {
+		Mesa         string `bson:"mesa"`
+		Habilitados  int    `bson:"habilitados"`
+		TotalVotos   int    `bson:"total_votos"`
+		VotosNulos   int    `bson:"votos_nulos"`
+		VotosBlancos int    `bson:"votos_blancos"`
+		VotosBlanco  int    `bson:"votos_blanco"`
+	}
+
+	type deptData struct{ hab, vot int }
+	byDept := map[string]*deptData{}
+	var totalHab, totalVot int64
+
+	for _, colName := range h.svc.RRVCollections {
+		colName = strings.TrimSpace(colName)
+		if colName == "" {
+			continue
+		}
+		col := h.mongoClient.Database(h.svc.DBName).Collection(colName)
+		cur, err := col.Find(ctx, bson.D{}, options.Find().SetProjection(bson.D{
+			{Key: "mesa", Value: 1}, {Key: "habilitados", Value: 1},
+			{Key: "total_votos", Value: 1}, {Key: "votos_nulos", Value: 1},
+			{Key: "votos_blancos", Value: 1}, {Key: "votos_blanco", Value: 1},
+		}))
+		if err != nil {
+			continue
+		}
+		for cur.Next(ctx) {
+			var doc docPart
+			if cur.Decode(&doc) != nil {
+				continue
+			}
+			if doc.Habilitados == 0 {
+				continue
+			}
+			blancos := doc.VotosBlancos
+			if blancos == 0 {
+				blancos = doc.VotosBlanco
+			}
+			votos := doc.TotalVotos
+			if votos == 0 {
+				votos = doc.VotosNulos + blancos
+			}
+			dept := departamentoFromMesa(doc.Mesa)
+			if _, ok := byDept[dept]; !ok {
+				byDept[dept] = &deptData{}
+			}
+			byDept[dept].hab += doc.Habilitados
+			byDept[dept].vot += votos
+			totalHab += int64(doc.Habilitados)
+			totalVot += int64(votos)
+		}
+		_ = cur.Close(ctx)
+	}
+
+	if totalHab == 0 {
+		// Fallback: PostgreSQL
+		type pgRes struct {
+			TotalHabilitados int64 `gorm:"column:total_habilitados"`
+			TotalVotos       int64 `gorm:"column:total_votos"`
+		}
+		var pgr pgRes
+		h.db.Raw(`SELECT COALESCE(SUM(m.cantidad_habilitada),0) AS total_habilitados,
+			COALESCE(SUM(a.votos_validos+a.votos_nulos+a.votos_blanco),0) AS total_votos
+			FROM mesa m LEFT JOIN acta a ON a.id_mesa=m.id`).Scan(&pgr)
+		if pgr.TotalHabilitados > 0 {
+			pct := round2(float64(pgr.TotalVotos) / float64(pgr.TotalHabilitados) * 100)
+			c.JSON(http.StatusOK, gin.H{
+				"available": true, "labels": []string{"Global"},
+				"datasets": []gin.H{{"label": "Participación %", "data": []float64{pct}, "backgroundColor": "#6c5ce7"}},
+				"raw":      gin.H{"total_habilitados": pgr.TotalHabilitados, "total_votos": pgr.TotalVotos},
+			})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"available": false,
-			"message":   "No hay datos suficientes para calcular participación (id_mesa no enlazado en actas)",
-			"labels":    []string{},
-			"datasets":  []gin.H{},
+			"message":   "Sin datos de participación (escanea actas con electores habilitados para ver esta métrica)",
+			"labels": []string{}, "datasets": []gin.H{},
 		})
 		return
 	}
 
-	pct := float64(res.TotalVotos) / float64(res.TotalHabilitados) * 100
+	depts := make([]string, 0, len(byDept))
+	for d := range byDept {
+		depts = append(depts, d)
+	}
+	sort.Strings(depts)
+
+	labels := make([]string, 0, len(depts))
+	data := make([]float64, 0, len(depts))
+	for _, d := range depts {
+		dd := byDept[d]
+		if dd.hab == 0 {
+			continue
+		}
+		labels = append(labels, d)
+		data = append(data, round2(float64(dd.vot)/float64(dd.hab)*100))
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"available": true,
-		"labels":    []string{"Global"},
-		"datasets": []gin.H{
-			{
-				"label": "Participación %",
-				"data":  []float64{round2(pct)},
-			},
-		},
-		"raw": gin.H{
-			"total_habilitados": res.TotalHabilitados,
-			"total_votos":       res.TotalVotos,
-		},
+		"available": true, "labels": labels,
+		"datasets": []gin.H{{"label": "Participación %", "data": data, "backgroundColor": "#6c5ce7"}},
+		"raw":      gin.H{"total_habilitados": totalHab, "total_votos": totalVot},
 	})
 }
 
@@ -281,10 +345,19 @@ func (h *Handler) Geografico(c *gin.Context) {
 		switch groupBy {
 		case "departamento":
 			key = acta.Departamento
+			if key == "" {
+				key = departamentoFromMesa(acta.Mesa)
+			}
 		case "municipio":
 			key = acta.Municipio
+			if key == "" {
+				key = departamentoFromMesa(acta.Mesa) + " (mesa " + acta.Mesa + ")"
+			}
 		case "recinto":
 			key = acta.Recinto
+			if key == "" && acta.Mesa != "" {
+				key = "Mesa " + acta.Mesa
+			}
 		}
 		if key == "" {
 			key = "(Sin clasificar)"
@@ -452,6 +525,99 @@ func (h *Handler) EventosRRV(c *gin.Context) {
 	})
 }
 
+// ─── GET /api/v1/dashboard/mobile-scans ──────────────────────────────────────
+//
+// Lista los últimos scans recibidos desde la app móvil / scanner web (MongoDB).
+// Devuelve id, mesa, estado, fuente, imagen_url, votos, fecha.
+
+func (h *Handler) MobileScans(c *gin.Context) {
+	type scanDoc struct {
+		ActaID         string    `bson:"acta_id"          json:"acta_id"`
+		Mesa           string    `bson:"mesa"             json:"mesa"`
+		Estado         string    `bson:"estado"           json:"estado"`
+		FuenteScan     string    `bson:"fuente_scan"      json:"fuente_scan"`
+		ImagenURL      string    `bson:"imagen_url"       json:"imagen_url"`
+		FechaRecepcion time.Time `bson:"fecha_recepcion"  json:"fecha_recepcion"`
+		TotalVotos     int       `bson:"total_votos"      json:"total_votos"`
+		VotosNulos     int       `bson:"votos_nulos"      json:"votos_nulos"`
+		VotosBlancos   int       `bson:"votos_blancos"    json:"votos_blancos"`
+		Habilitados    int       `bson:"habilitados"      json:"habilitados"`
+		Candidatos     []struct {
+			CandidatoID string `bson:"candidato_id" json:"candidato_id"`
+			Nombre      string `bson:"nombre"       json:"nombre"`
+			Votos       int    `bson:"votos"        json:"votos"`
+		} `bson:"candidatos" json:"candidatos"`
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	var all []scanDoc
+	seen := map[string]bool{}
+	collections := h.svc.RRVCollections
+	if len(collections) == 0 {
+		collections = []string{"actas_rrv"}
+	}
+	for _, colName := range collections {
+		colName = strings.TrimSpace(colName)
+		if colName == "" || seen[colName] {
+			continue
+		}
+		seen[colName] = true
+		col := h.mongoClient.Database(h.svc.DBName).Collection(colName)
+		cur, err := col.Find(ctx, bson.D{},
+			options.Find().SetSort(bson.D{{Key: "fecha_recepcion", Value: -1}}).SetLimit(50))
+		if err != nil {
+			continue
+		}
+		for cur.Next(ctx) {
+			var doc scanDoc
+			if cur.Decode(&doc) == nil {
+				all = append(all, doc)
+			}
+		}
+		_ = cur.Close(ctx)
+	}
+
+	// Ordenar por fecha desc y tomar los 30 más recientes
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].FechaRecepcion.After(all[j].FechaRecepcion)
+	})
+	if len(all) > 30 {
+		all = all[:30]
+	}
+	if all == nil {
+		all = []scanDoc{}
+	}
+
+	// Agregar totales de votos por candidato para el dashboard
+	type candTotales struct {
+		Nombre string `json:"nombre"`
+		Votos  int    `json:"votos"`
+	}
+	totalesCand := map[string]*candTotales{}
+	for _, scan := range all {
+		if scan.Estado != "validada" && scan.Estado != "pendiente_revision" {
+			continue
+		}
+		for _, cand := range scan.Candidatos {
+			if _, ok := totalesCand[cand.CandidatoID]; !ok {
+				totalesCand[cand.CandidatoID] = &candTotales{Nombre: cand.Nombre}
+			}
+			totalesCand[cand.CandidatoID].Votos += cand.Votos
+			if cand.Nombre != "" {
+				totalesCand[cand.CandidatoID].Nombre = cand.Nombre
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":         len(all),
+		"scans":         all,
+		"votos_totales": totalesCand,
+	})
+}
+
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
 func (h *Handler) fetchAmbas(ctx context.Context) (rrv, oficiales []comparacion.ActaFuente, err error) {
@@ -503,4 +669,23 @@ func (h *Handler) runComparacion(ctx context.Context) (comparacion.ResumenCompar
 
 func round2(f float64) float64 {
 	return float64(int(f*100+0.5)) / 100
+}
+
+// departamentoFromMesa deriva el departamento de Bolivia a partir del código de mesa PNRE.
+// Los primeros 2 dígitos del código de mesa identifican el departamento.
+func departamentoFromMesa(mesa string) string {
+	mesa = strings.TrimSpace(mesa)
+	if len(mesa) < 2 {
+		return "(Sin clasificar)"
+	}
+	prefix := mesa[:2]
+	dept := map[string]string{
+		"10": "Chuquisaca", "20": "La Paz", "30": "Cochabamba",
+		"40": "Oruro", "50": "Potosí", "60": "Tarija",
+		"70": "Santa Cruz", "80": "Beni", "90": "Pando",
+	}
+	if name, ok := dept[prefix]; ok {
+		return name
+	}
+	return "(Sin clasificar)"
 }

@@ -6,6 +6,7 @@ import ActaForm from './pages/ActaForm.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import InconsistenciasPage from './pages/InconsistenciasPage.jsx'
 import ScannerPage from './pages/ScannerPage.jsx'
+import SMSPage from './pages/SMSPage.jsx'
 import Layout from './components/Layout.jsx'
 
 function ProtectedRoute({ children }) {
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="scanner" element={<ScannerPage />} />
         <Route path="actas" element={<Actas />} />
         <Route path="actas/nueva" element={<ActaForm />} />
+        <Route path="sms" element={<SMSPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

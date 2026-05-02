@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Escáner de actas electorales - Sistema RRV Bolivia">
+  <title>Escáner de Actas - RRV Bolivia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs" type="module"></script>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="view-login" class="view active">
+    <div class="login-container">
+      <div class="logo-section">
+        <div class="logo-icon">🗳️</div>
+        <h1>RRV Bolivia</h1>
+        <p class="subtitle">Escáner Móvil de Actas</p>
+      </div>
+      <div class="form-card">
+        <div class="input-group">
+          <label>Usuario</label>
+          <input id="login-user" type="text" placeholder="admin" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label>Contraseña</label>
+          <input id="login-pass" type="text" placeholder="contraseña" autocomplete="off" style="-webkit-text-security:disc;text-security:disc">
+        </div>
+        <button type="button" id="btn-login" class="btn-primary">
+          <span class="btn-text">Ingresar</span>
+          <span class="btn-loader hidden">⏳</span>
+        </button>
+        <p id="login-error" class="error-msg hidden"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCANNER -->
+  <div id="view-scanner" class="view">
+    <header class="app-header">
+      <h2>📷 Escáner de Actas</h2>
+      <div class="header-actions">
+        <button id="btn-history" class="btn-icon">📋</button>
+        <button id="btn-logout" class="btn-icon">🚪</button>
+      </div>
+    </header>
+    <main class="scanner-main">
+      <div class="capture-card">
+        <div id="preview-area" class="preview-area">
+          <img id="img-preview" class="hidden" alt="Acta">
+          <div id="placeholder" class="placeholder"><span class="camera-icon">📸</span><p>Toca para capturar el acta</p></div>
+        </div>
+        <input type="file" id="file-input" accept="image/*,.pdf" capture="environment" class="hidden">
+        <div class="capture-actions">
+          <button id="btn-capture" class="btn-capture"><span>📷</span> Capturar Acta</button>
+          <button id="btn-gallery" class="btn-secondary"><span>🖼️</span> Galería</button>
+        </div>
+      </div>
+      <button id="btn-upload" class="btn-upload hidden" disabled>
+        <span class="btn-text">🔍 Escanear con OCR</span>
+        <span class="btn-loader hidden">Procesando...</span>
+      </button>
+      <div id="progress-section" class="progress-card hidden">
+        <div class="progress-bar-container"><div id="progress-bar" class="progress-bar" style="width:0%"></div></div>
+        <p id="progress-text" class="progress-text">Iniciando...</p>
+      </div>
+
+      <!-- RESULT: Editable fields + Accept/Reject -->
+      <div id="result-section" class="hidden">
+        <div class="result-card">
+          <div id="result-header" class="result-header observed">
+            <span>📊</span><span class="status-text">Resultado de transcripción</span>
+          </div>
+
+          <!-- Acta anulada banner -->
+          <div id="anulada-banner" class="anulada-banner hidden">
+            <span class="anulada-icon">🚫</span>
+            <div>
+              <div class="anulada-title">Acta marcada como ANULADA</div>
+              <div class="anulada-sub">No puede ingresar al cómputo. Se registrará en log de observadas.</div>
+            </div>
+          </div>
+
+          <!-- Info solo bordes dañados -->
+          <div id="bordes-info" class="bordes-info hidden">
+            ℹ️ Solo bordes/esquinas dañados — el área central de votos es legible. El acta puede procesarse normalmente.
+          </div>
+
+          <!-- Duplicado detectado -->
+          <div id="duplicate-banner" class="duplicate-banner hidden"></div>
+
+          <!-- Observaciones OEP -->
+          <div id="obs-section" class="obs-section hidden">
+            <div class="obs-header">
+              <span>⚠️</span>
+              <span id="obs-count">0 observaciones detectadas</span>
+            </div>
+            <div id="obs-list"></div>
+          </div>
+
+          <div id="validation-alerts" class="validation-alerts"></div>
+          <div class="edit-grid">
+            <div class="edit-field"><label>Código Acta</label><input id="r-codigo" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Mesa</label><input id="r-mesa" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Partido 1</label><input id="r-partido-1" type="text" autocomplete="off"></div>
+            <div class="edit-field"><label>Partido 2</label><input id="r-partido-2" type="text" autocomplete="off"></div>
+            <div class="edit-field"><label>Partido 3</label><input id="r-partido-3" type="text" autocomplete="off"></div>
+            <div class="edit-field"><label>Partido 4</label><input id="r-partido-4" type="text" autocomplete="off"></div>
+            <div class="edit-field"><label>P1</label><input id="r-p1" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>P2</label><input id="r-p2" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>P3</label><input id="r-p3" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>P4</label><input id="r-p4" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Votos Válidos</label><input id="r-validos" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Votos Nulos</label><input id="r-nulos" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Votos Blancos</label><input id="r-blancos" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Total Votos</label><input id="r-total" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Papeletas Ánfora</label><input id="r-papeletas" type="text" inputmode="numeric"></div>
+            <div class="edit-field"><label>Hora Apertura</label><input id="r-apertura" type="text" placeholder="HH:MM"></div>
+            <div class="edit-field"><label>Hora Cierre</label><input id="r-cierre" type="text" placeholder="HH:MM"></div>
+          </div>
+          <div class="decision-section">
+            <div class="input-group" id="reason-group" style="display:none">
+              <label>Razón de rechazo</label>
+              <textarea id="r-reason" rows="2" placeholder="Motivo por el que no se toma en cuenta esta acta..."></textarea>
+            </div>
+            <div class="decision-buttons">
+              <button type="button" id="btn-accept" class="btn-accept">✅ Aceptar — Enviar a RRV</button>
+              <button type="button" id="btn-mark-observed" class="btn-observed hidden">📋 Marcar Observada</button>
+              <button type="button" id="btn-confirm-anulada" class="btn-anulada hidden">🚫 Confirmar Anulación</button>
+              <button type="button" id="btn-reject" class="btn-reject">❌ Rechazar Acta</button>
+            </div>
+          </div>
+        </div>
+        <!-- Final status after decision -->
+        <div id="final-status" class="final-status hidden"></div>
+      </div>
+
+      <!-- OCR Raw Text (collapsible) -->
+      <div id="ocr-section" class="result-card hidden">
+        <details>
+          <summary class="ocr-summary">🔤 Ver texto extraído por OCR</summary>
+          <pre id="ocr-text" class="ocr-text"></pre>
+        </details>
+      </div>
+    </main>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="view-history" class="view">
+    <header class="app-header">
+      <button id="btn-back" class="btn-icon">⬅️</button>
+      <h2>📋 Historial</h2>
+    </header>
+    <div id="history-list" class="history-list"><p class="loading-text">Cargando...</p></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

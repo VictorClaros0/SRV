@@ -21,10 +21,13 @@ type Config struct {
 	AdminPass   string
 	CORSOrigins string
 	// MongoDB
-	MongoURI            string
-	MongoDBName         string
-	MongoRRVCollections []string
+	MongoURI              string
+	MongoDBName           string
+	MongoRRVCollections   []string
 	MongoEventsCollection string
+	// SMS
+	SMSDefaultNumbers  []string
+	SMSConfigCollection string
 	// n8n
 	N8NWebhookURL string
 }
@@ -49,7 +52,9 @@ func Load() *Config {
 		MongoDBName:           getEnv("MONGO_DATABASE", "rrv"),
 		MongoRRVCollections:   getEnvList("MONGO_RRV_COLLECTIONS", getEnv("MONGO_RRV_COLLECTION", "actas_rrv")),
 		MongoEventsCollection: getEnv("MONGO_EVENTS_COLLECTION", "rrv_eventos"),
-		N8NWebhookURL: getEnv("N8N_TRIGGER_WEBHOOK_URL", "http://n8n:5678/webhook/trigger-transcripcion"),
+		SMSDefaultNumbers:     getEnvList("SMS_AUTHORIZED_NUMBERS", "65707079"),
+		SMSConfigCollection:   getEnv("SMS_CONFIG_COLLECTION", "sms_config"),
+		N8NWebhookURL:         getEnv("N8N_TRIGGER_WEBHOOK_URL", "http://n8n:5678/webhook/trigger-transcripcion"),
 	}
 }
 
