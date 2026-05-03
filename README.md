@@ -2,6 +2,10 @@
 
 Backend REST en **Go (Gin + GORM + JWT)** para el registro y transcripción de actas electorales. La base de datos es **PostgreSQL** en alta disponibilidad con repmgr y Pgpool-II. La transcripción masiva se simula mediante un workflow de **n8n** que procesa los datos del Excel como si fuera un operador humano.
 
+## ¿Cómo funciona el sistema?
+
+SROV es una plataforma electoral que digitaliza el proceso de transcripción de actas de votación. El frontend en React se comunica con una API REST en Go, que persiste los datos en un clúster PostgreSQL de alta disponibilidad compuesto por un nodo primario y un standby sincronizados mediante repmgr, y balanceados a través de Pgpool-II. Las actas se cargan inicialmente desde archivos CSV con estado `impresa` y votos en cero; al activar la simulación, n8n actúa como operador automatizado leyendo los resultados reales y enviándolos al webhook de la API acta por acta. Según el contenido de cada acta, el sistema la marca como `transcrita` (válida para el conteo oficial) u `observada` (derivada a auditoría por irregularidades), generando así un registro completo y trazable del proceso electoral.
+
 ---
 
 ## Cómo funciona la app
@@ -93,7 +97,7 @@ Con el workflow abierto, hacer click en el botón **"Publish"** (arriba a la der
 
 ### Paso 4 — Simular la transcripción
 
-1. Ir al frontend: **http://localhost:3010**
+1. Ir al frontend: **http://localhost:3000**
 2. Ir a la sección **Actas**
 3. Hacer click en **"▶ Simular transcripción (n8n)"**
 4. El botón cambia a "⏳ Simulando..."
@@ -123,7 +127,7 @@ Respuesta esperada:
 ## Arquitectura
 
 ```
-Browser (puerto 3010)
+Browser (puerto 3000)
   │
   ▼
 Frontend React + Nginx
@@ -433,9 +437,9 @@ El sistema captura automáticamente los siguientes campos de auditoría en cada 
 
 ---
 
-## Extensiones propuestas (no implementadas)
+## Endpoints de resultados y filtros
 
-Estos endpoints pueden agregarse en `handlers/resultados.go` siguiendo el mismo patrón:
+Implementados en `handlers/resultados.go` y `handlers/filtros.go`. Todos requieren JWT.
 
 ### Resultados por recinto
 
@@ -443,15 +447,45 @@ Estos endpoints pueden agregarse en `handlers/resultados.go` siguiendo el mismo 
 GET /api/v1/resultados/recintos
 ```
 
+Devuelve los votos de cada candidato agrupados por recinto electoral.
+
 ```sql
 SELECT re.recinto AS ubicacion,
-  COALESCE(SUM(a.p1),0) p1, COALESCE(SUM(a.p2),0) p2,
-  COALESCE(SUM(a.p3),0) p3, COALESCE(SUM(a.p4),0) p4,
-  COUNT(*) total_actas
+  COALESCE(SUM(a.p1),0) AS p1, COALESCE(SUM(a.p2),0) AS p2,
+  COALESCE(SUM(a.p3),0) AS p3, COALESCE(SUM(a.p4),0) AS p4,
+  COUNT(*) AS total_actas
 FROM acta a
 JOIN recinto_electoral re ON a.codigo_recinto = re.recinto_id
 WHERE a.fecha_eliminado IS NULL AND a.estado = 'transcrita'
 GROUP BY re.recinto_id, re.recinto ORDER BY re.recinto;
+```
+
+**Respuesta:**
+```json
+[
+  {
+    "ubicacion": "Colegio Nacional Bolívar",
+    "p1": 342,
+    "p2": 198,
+    "p3": 87,
+    "p4": 210,
+    "votosValidos": 0,
+    "votosNulos": 0,
+    "votosBlanco": 0,
+    "totalActas": 5
+  },
+  {
+    "ubicacion": "Unidad Educativa San Martín",
+    "p1": 510,
+    "p2": 320,
+    "p3": 145,
+    "p4": 290,
+    "votosValidos": 0,
+    "votosNulos": 0,
+    "votosBlanco": 0,
+    "totalActas": 8
+  }
+]
 ```
 
 ### Resultados por provincia
@@ -460,8 +494,13 @@ GROUP BY re.recinto_id, re.recinto ORDER BY re.recinto;
 GET /api/v1/resultados/provincias
 ```
 
+Devuelve los votos de cada candidato agrupados por provincia.
+
 ```sql
-SELECT dt.provincia AS ubicacion, ...
+SELECT dt.provincia AS ubicacion,
+  COALESCE(SUM(a.p1),0) AS p1, COALESCE(SUM(a.p2),0) AS p2,
+  COALESCE(SUM(a.p3),0) AS p3, COALESCE(SUM(a.p4),0) AS p4,
+  COUNT(*) AS total_actas
 FROM acta a
 JOIN recinto_electoral re ON a.codigo_recinto = re.recinto_id
 JOIN distribucion_territorial dt ON re.id_distribucion_territorial = dt.id
@@ -469,18 +508,41 @@ WHERE a.fecha_eliminado IS NULL AND a.estado = 'transcrita'
 GROUP BY dt.provincia ORDER BY dt.provincia;
 ```
 
-### Heatmap (candidato ganador por ubicación)
+**Respuesta:**
+```json
+[
+  {
+    "ubicacion": "Aroma",
+    "p1": 1540,
+    "p2": 890,
+    "p3": 320,
+    "p4": 760,
+    "votosValidos": 0,
+    "votosNulos": 0,
+    "votosBlanco": 0,
+    "totalActas": 22
+  },
+  {
+    "ubicacion": "Murillo",
+    "p1": 4210,
+    "p2": 3100,
+    "p3": 980,
+    "p4": 2340,
+    "votosValidos": 0,
+    "votosNulos": 0,
+    "votosBlanco": 0,
+    "totalActas": 87
+  }
+]
+```
+
+### Heatmap por departamento
 
 ```http
 GET /api/v1/heatmap/departamentos
 ```
 
-```json
-[
-  { "ubicacion": "La Paz", "candidato_ganador": "P1", "votos": 12340 },
-  { "ubicacion": "Cochabamba", "candidato_ganador": "P4", "votos": 9800 }
-]
-```
+Devuelve el candidato ganador y sus votos totales por departamento.
 
 ```sql
 SELECT dt.departamento AS ubicacion,
@@ -496,6 +558,87 @@ JOIN recinto_electoral re ON a.codigo_recinto = re.recinto_id
 JOIN distribucion_territorial dt ON re.id_distribucion_territorial = dt.id
 WHERE a.fecha_eliminado IS NULL AND a.estado = 'transcrita'
 GROUP BY dt.departamento ORDER BY dt.departamento;
+```
+
+**Respuesta:**
+```json
+[
+  { "ubicacion": "Beni",            "candidatoGanador": "P2", "votos": 5420 },
+  { "ubicacion": "Cochabamba",      "candidatoGanador": "P1", "votos": 9800 },
+  { "ubicacion": "La Paz",          "candidatoGanador": "P1", "votos": 12340 },
+  { "ubicacion": "Oruro",           "candidatoGanador": "P3", "votos": 3100 },
+  { "ubicacion": "Pando",           "candidatoGanador": "P4", "votos": 1870 },
+  { "ubicacion": "Potosí",          "candidatoGanador": "P1", "votos": 7650 },
+  { "ubicacion": "Santa Cruz",      "candidatoGanador": "P2", "votos": 11200 },
+  { "ubicacion": "Tarija",          "candidatoGanador": "P3", "votos": 4300 },
+  { "ubicacion": "Chuquisaca",      "candidatoGanador": "P1", "votos": 5980 }
+]
+```
+
+---
+
+## Endpoints de filtros
+
+Devuelven solo id y nombre para poblar selectores en el frontend. Implementados en `handlers/filtros.go`.
+
+### Filtro de recintos
+
+```http
+GET /api/v1/filtros/recintos
+```
+
+```json
+[
+  { "id": 1, "nombre": "Colegio Nacional Bolívar" },
+  { "id": 2, "nombre": "Unidad Educativa San Martín" }
+]
+```
+
+### Filtro de mesas
+
+```http
+GET /api/v1/filtros/mesas
+```
+
+```json
+[
+  { "id": 1, "nombre": "M-001" },
+  { "id": 2, "nombre": "M-002" }
+]
+```
+
+### Filtro de provincias
+
+```http
+GET /api/v1/filtros/provincias
+```
+
+```json
+[
+  { "nombre": "Aroma" },
+  { "nombre": "Murillo" },
+  { "nombre": "Sud Yungas" }
+]
+```
+
+### Filtro de departamentos
+
+```http
+GET /api/v1/filtros/departamentos
+```
+
+```json
+[
+  { "nombre": "Beni" },
+  { "nombre": "Cochabamba" },
+  { "nombre": "La Paz" },
+  { "nombre": "Oruro" },
+  { "nombre": "Pando" },
+  { "nombre": "Potosí" },
+  { "nombre": "Santa Cruz" },
+  { "nombre": "Tarija" },
+  { "nombre": "Chuquisaca" }
+]
 ```
 
 ---

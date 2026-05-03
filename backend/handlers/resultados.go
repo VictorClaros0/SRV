@@ -109,6 +109,69 @@ type actaAuditoria struct {
 	FechaCreacion time.Time `gorm:"column:fecha_creacion" json:"fechaCreacion"`
 }
 
+type heatmapItem struct {
+	Ubicacion        string `gorm:"column:ubicacion" json:"ubicacion"`
+	CandidatoGanador string `gorm:"column:candidato_ganador" json:"candidatoGanador"`
+	Votos            int64  `gorm:"column:votos" json:"votos"`
+}
+
+// ResultadosPorRecintos devuelve votos agrupados por recinto electoral.
+func (h *ResultadosHandler) ResultadosPorRecintos(c *gin.Context) {
+	var rows []resultadoPorUbicacion
+	h.DB.Raw(`
+		SELECT re.recinto AS ubicacion,
+			COALESCE(SUM(a.p1),0) AS p1, COALESCE(SUM(a.p2),0) AS p2,
+			COALESCE(SUM(a.p3),0) AS p3, COALESCE(SUM(a.p4),0) AS p4,
+			COUNT(*) AS total_actas
+		FROM acta a
+		JOIN recinto_electoral re ON a.codigo_recinto = re.recinto_id
+		WHERE a.fecha_eliminado IS NULL AND a.estado = 'transcrita'
+		GROUP BY re.recinto_id, re.recinto
+		ORDER BY re.recinto
+	`).Scan(&rows)
+	c.JSON(http.StatusOK, rows)
+}
+
+// ResultadosPorProvincias devuelve votos agrupados por provincia.
+func (h *ResultadosHandler) ResultadosPorProvincias(c *gin.Context) {
+	var rows []resultadoPorUbicacion
+	h.DB.Raw(`
+		SELECT dt.provincia AS ubicacion,
+			COALESCE(SUM(a.p1),0) AS p1, COALESCE(SUM(a.p2),0) AS p2,
+			COALESCE(SUM(a.p3),0) AS p3, COALESCE(SUM(a.p4),0) AS p4,
+			COUNT(*) AS total_actas
+		FROM acta a
+		JOIN recinto_electoral re ON a.codigo_recinto = re.recinto_id
+		JOIN distribucion_territorial dt ON re.id_distribucion_territorial = dt.id
+		WHERE a.fecha_eliminado IS NULL AND a.estado = 'transcrita'
+		GROUP BY dt.provincia
+		ORDER BY dt.provincia
+	`).Scan(&rows)
+	c.JSON(http.StatusOK, rows)
+}
+
+// HeatmapDepartamentos devuelve el candidato ganador y sus votos por departamento.
+func (h *ResultadosHandler) HeatmapDepartamentos(c *gin.Context) {
+	var rows []heatmapItem
+	h.DB.Raw(`
+		SELECT dt.departamento AS ubicacion,
+			CASE
+				WHEN SUM(p1) >= SUM(p2) AND SUM(p1) >= SUM(p3) AND SUM(p1) >= SUM(p4) THEN 'P1'
+				WHEN SUM(p2) >= SUM(p3) AND SUM(p2) >= SUM(p4) THEN 'P2'
+				WHEN SUM(p3) >= SUM(p4) THEN 'P3'
+				ELSE 'P4'
+			END AS candidato_ganador,
+			GREATEST(SUM(p1), SUM(p2), SUM(p3), SUM(p4)) AS votos
+		FROM acta a
+		JOIN recinto_electoral re ON a.codigo_recinto = re.recinto_id
+		JOIN distribucion_territorial dt ON re.id_distribucion_territorial = dt.id
+		WHERE a.fecha_eliminado IS NULL AND a.estado = 'transcrita'
+		GROUP BY dt.departamento
+		ORDER BY dt.departamento
+	`).Scan(&rows)
+	c.JSON(http.StatusOK, rows)
+}
+
 // Auditoria devuelve las actas con estado='observada': actas que fueron recibidas
 // desde el Excel con observaciones y que por eso no se contabilizan en resultados.
 func (h *ResultadosHandler) Auditoria(c *gin.Context) {

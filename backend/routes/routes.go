@@ -22,6 +22,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	mesaH := &handlers.MesaHandler{DB: db}
 	actaH := &handlers.ActaHandler{DB: db}
 	resH := &handlers.ResultadosHandler{DB: db}
+	filtH := &handlers.FiltrosHandler{DB: db}
 
 	r.GET("/health", health(db))
 
@@ -70,7 +71,15 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	protected.DELETE("/actas/:id", actaH.Delete)
 
 	protected.GET("/resultados", resH.Resultados)
+	protected.GET("/resultados/recintos", resH.ResultadosPorRecintos)
+	protected.GET("/resultados/provincias", resH.ResultadosPorProvincias)
+	protected.GET("/heatmap/departamentos", resH.HeatmapDepartamentos)
 	protected.GET("/auditoria", resH.Auditoria)
+
+	protected.GET("/filtros/recintos", filtH.FiltroRecintos)
+	protected.GET("/filtros/mesas", filtH.FiltroMesas)
+	protected.GET("/filtros/provincias", filtH.FiltroProvincias)
+	protected.GET("/filtros/departamentos", filtH.FiltroDepartamentos)
 }
 
 func corsMiddleware(allowed string) gin.HandlerFunc {

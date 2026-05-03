@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:8090', changeOrigin: true },
       '/webhook': { target: 'http://localhost:8090', changeOrigin: true },
-      '/n8n': { target: 'http://localhost:5678', changeOrigin: true, rewrite: path => path.replace(/^\/n8n/, '') },
+      '/n8n': { target: 'http://localhost:5690', changeOrigin: true, rewrite: path => path.replace(/^\/n8n/, '') },
     },
   },
 })
