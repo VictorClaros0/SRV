@@ -7,5 +7,6 @@ type Mesa struct {
 	ID                 bson.ObjectID `bson:"_id,omitempty"      json:"id"`
 	Codigo             int           `bson:"codigo"             json:"codigo"             binding:"required"`
 	CantidadHabilitada int           `bson:"cantidadHabilitada" json:"cantidadHabilitada" binding:"required"`
+	Mesa               int           `bson:"mesa"               json:"mesa"               binding:"required"`
 	IDRecintoElectoral bson.ObjectID `bson:"idRecintoElectoral" json:"idRecintoElectoral" binding:"required"`
 }

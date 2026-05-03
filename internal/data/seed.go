@@ -145,6 +145,7 @@ func SeedDatabase(db *mongo.Database, basePath string) error {
 		}
 		
 		codigoMesa, _ := strconv.Atoi(row[1])
+		mesaNum, _ := strconv.Atoi(row[2])
 		nroVotantes, _ := strconv.Atoi(row[3])
 		
 		// El ID del recinto corresponde a los primeros 8 dígitos del código de la mesa
@@ -163,6 +164,7 @@ func SeedDatabase(db *mongo.Database, basePath string) error {
 			ID:                 bson.NewObjectID(),
 			Codigo:             codigoMesa,
 			CantidadHabilitada: nroVotantes,
+			Mesa:               mesaNum,
 			IDRecintoElectoral: recID,
 		}
 		mesaDocs = append(mesaDocs, doc)

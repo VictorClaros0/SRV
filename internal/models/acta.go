@@ -13,6 +13,18 @@ type Acta struct {
 	VotosNulos        int           `bson:"votosNulos"       json:"votosNulos"`
 	VotosBlanco       int           `bson:"votosBlanco"      json:"votosBlanco"`
 	VotosValidos      int           `bson:"votosValidos"     json:"votosValidos"`
-	IDMesa            bson.ObjectID `bson:"idMesa"           json:"idMesa"           binding:"required"`
+	IDMesa            bson.ObjectID `bson:"idMesa"           json:"idMesa"`
+	CodigoMesa        string        `bson:"codigoMesa"       json:"codigoMesa"`
+	Mesa              int           `bson:"mesa"             json:"mesa"`
+	Departamento      string        `bson:"departamento"     json:"departamento"`
+	Provincia         string        `bson:"provincia"        json:"provincia"`
+	Municipio         string        `bson:"municipio"        json:"municipio"`
+	Recinto           string        `bson:"recinto"          json:"recinto"`
+	VotantesHabilitados int         `bson:"votantesHabilitados" json:"votantesHabilitados"`
+	PapeletasAnfora   int           `bson:"papeletasAnfora"   json:"papeletasAnfora"`
+	AperturaHora      int           `bson:"aperturaHora"      json:"aperturaHora"`
+	AperturaMinutos   int           `bson:"aperturaMinutos"   json:"aperturaMinutos"`
+	CierreHora        int           `bson:"cierreHora"        json:"cierreHora"`
+	CierreMinutos     int           `bson:"cierreMinutos"     json:"cierreMinutos"`
 	TipoCliente       string        `bson:"tipoCliente"      json:"tipoCliente"      binding:"required"`
 }

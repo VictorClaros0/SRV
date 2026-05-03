@@ -135,6 +135,7 @@ func main() {
 		}
 		
 		codigoMesa, _ := strconv.ParseInt(record[1], 10, 64)
+		mesaNum, _ := strconv.Atoi(record[2])
 		votantes, _ := strconv.Atoi(record[3])
 
 		// El recintoId son los primeros 8 digitos del codigo de mesa (dividiendo entre 1000)
@@ -157,6 +158,7 @@ func main() {
 			ID:                 bson.NewObjectID(),
 			Codigo:             int(codigoMesa),
 			CantidadHabilitada: votantes,
+			Mesa:               mesaNum,
 			IDRecintoElectoral: idRec,
 		}
 		_, err := colMesa.InsertOne(ctx, m)

@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+celery
+redis
+paddlepaddle==2.6.2
+paddleocr==2.9.1
+pdf2image
+opencv-python-headless
+requests
+pydantic
+pymongo
