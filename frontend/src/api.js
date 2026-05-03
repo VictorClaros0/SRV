@@ -27,6 +27,13 @@ async function request(method, path, body) {
   return res.json()
 }
 
+function qs(params) {
+  const p = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => { if (v) p.set(k, v) })
+  const s = p.toString()
+  return s ? '?' + s : ''
+}
+
 export const api = {
   login: (usuario, contrasena) =>
     fetch(BASE + '/auth/login', {
@@ -42,10 +49,7 @@ export const api = {
   me: () => request('GET', '/auth/me'),
 
   actas: {
-    list: (params = {}) => {
-      const qs = new URLSearchParams(params).toString()
-      return request('GET', `/actas${qs ? '?' + qs : ''}`)
-    },
+    list: (params = {}) => request('GET', `/actas${qs(params)}`),
     get: (id) => request('GET', `/actas/${id}`),
     create: (body) => request('POST', '/actas', body),
     update: (id, body) => request('PUT', `/actas/${id}`, body),
@@ -58,22 +62,29 @@ export const api = {
   },
 
   resultados: {
-    get: () => request('GET', '/resultados'),
+    get: (params = {}) => request('GET', `/resultados${qs(params)}`),
     auditoria: () => request('GET', '/auditoria'),
   },
 
-  // Dispara el workflow de n8n que simula la transcripción masiva.
-  // n8n lee /api/v1/actas/para-transcribir y llama al webhook por cada acta.
-  simularTranscripcion: () =>
-    fetch('/n8n/webhook/trigger-transcripcion', {
+  filtros: {
+    departamentos: () =>
+      request('GET', '/filtros/departamentos'),
+    municipios: (departamento = '') =>
+      request('GET', `/filtros/municipios${qs({ departamento })}`),
+    provincias: (departamento = '', municipio = '') =>
+      request('GET', `/filtros/provincias${qs({ departamento, municipio })}`),
+    recintos: (departamento = '', municipio = '', provincia = '') =>
+      request('GET', `/filtros/recintos${qs({ departamento, municipio, provincia })}`),
+    mesas: (recinto = '') =>
+      request('GET', `/filtros/mesas${qs({ recinto })}`),
+  },
+
+  procesarTranscripciones: () =>
+    fetch(BASE + '/actas/procesar-transcripciones', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: '{}',
     }).then(async r => {
-      if (!r.ok) {
-        const txt = await r.text().catch(() => r.statusText)
-        throw new Error(txt || 'n8n no respondió. ¿El workflow está activo?')
-      }
-      return r.json().catch(() => ({ ok: true }))
+      if (!r.ok) throw new Error(await r.text().catch(() => r.statusText))
+      return r.json()
     }),
 }

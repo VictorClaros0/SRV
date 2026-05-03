@@ -222,7 +222,6 @@ export default function Actas() {
   const [page, setPage] = useState(1)
   const [msg, setMsg] = useState({ texto: '', ok: true })
   const [simulando, setSimulando] = useState(false)
-  const pollRef      = useRef(null)
   const completedRef = useRef(new Map())
   const nav = useNavigate()
 
@@ -246,7 +245,6 @@ export default function Actas() {
 
   useEffect(() => {
     loadActas()
-    return () => clearInterval(pollRef.current)
   }, [])
 
   async function loadActas() {
@@ -274,33 +272,17 @@ export default function Actas() {
   async function handleSimular() {
     setMsg({ texto: '', ok: true })
     completedRef.current.clear()
+    setSimulando(true)
+    setMsg({ texto: '▶ Transcribiendo actas...', ok: true })
     try {
-      const snapshot = { transcrita: actas.filter(a => a.estado === 'transcrita').length, observada: actas.filter(a => a.estado === 'observada').length }
-      await api.simularTranscripcion()
-      setSimulando(true)
-      setMsg({ texto: '▶ Simulación iniciada en n8n. Las actas se irán actualizando...', ok: true })
-      let ticks = 0
-      const MAX_TICKS = 60
-      pollRef.current = setInterval(async () => {
-        ticks++
-        const data = await api.actas.list().catch(() => null)
-        if (!data) return
-        // mantener overrides locales para actas que el servidor aún no ha confirmado
-        setActas(data.map(a =>
-          a.estado !== 'impresa' ? a : (completedRef.current.get(a.id) || a)
-        ))
-        const impresa    = data.filter(a => a.estado === 'impresa').length
-        const transcrita = data.filter(a => a.estado === 'transcrita').length
-        const observada  = data.filter(a => a.estado === 'observada').length
-        const estabilizado = impresa === 0 && (transcrita !== snapshot.transcrita || observada !== snapshot.observada || ticks >= MAX_TICKS)
-        if (estabilizado || ticks >= MAX_TICKS) {
-          clearInterval(pollRef.current)
-          setSimulando(false)
-          setMsg({ texto: `✓ Transcripción completada. ${transcrita} transcritas, ${observada} observadas.`, ok: true })
-        }
-      }, 2000)
+      const result = await api.procesarTranscripciones()
+      const data = await api.actas.list()
+      setActas(data || [])
+      setMsg({ texto: `✓ Completado: ${result.actualizadas} transcritas, ${result.observadas} observadas.`, ok: true })
     } catch (e) {
       setMsg({ texto: 'Error: ' + e.message, ok: false })
+    } finally {
+      setSimulando(false)
     }
   }
 
@@ -327,9 +309,9 @@ export default function Actas() {
           style={simulando ? s.btnDisabled : s.btnN8n}
           onClick={handleSimular}
           disabled={simulando}
-          title="Dispara el workflow de n8n que transcribe todas las actas impresas"
+          title="Procesa todas las actas impresas y las transcribe a la base de datos"
         >
-          {simulando ? '⏳ Simulando...' : '▶ Simular transcripción (n8n)'}
+          {simulando ? '⏳ Transcribiendo...' : '▶ Simular transcripción'}
         </button>
       </div>
 
