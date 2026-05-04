@@ -111,6 +111,8 @@ services:
       TWILIO_VERIFIED_NUMBER: ${TWILIO_VERIFIED_NUMBER}
       # PINs SMS extra (opcional, separados por coma)
       # VALID_PINS: "9999,8888"
+    volumes:
+      - ./data/logs:/app/data/logs
     depends_on:
       mongo-setup:
         condition: service_completed_successfully

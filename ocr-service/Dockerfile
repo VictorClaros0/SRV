@@ -19,7 +19,7 @@ COPY requirements.txt .
 
 # Instalar librerías de Python. 
 # Si no hay GPU disponible en el contenedor, PaddlePaddle usará la CPU automáticamente.
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout=120 -r requirements.txt
 
 # Copiar el código fuente
 COPY . .

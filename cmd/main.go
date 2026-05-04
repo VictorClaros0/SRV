@@ -52,6 +52,7 @@ func main() {
 	actaRepo         := repository.NewActaRepository(db)
 	rrvActaRepo      := repository.NewRRVActaRepository(db)
 	eventoRepo       := repository.NewEventoRepository(db)
+	dashboardRepo    := repository.NewDashboardRepository(db)
 
 	// ── Handlers ──────────────────────────────────────────────────────────────
 	distribucionH := handlers.NewDistribucionHandler(distribucionRepo)
@@ -60,6 +61,7 @@ func main() {
 	actaH         := handlers.NewActaHandler(actaRepo)
 	twilioClient  := services.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioMessagingSID, cfg.TwilioFromNumber)
 	rrvH          := handlers.NewRRVHandler(rrvActaRepo, eventoRepo, twilioClient)
+	dashboardH    := handlers.NewDashboardHandler(dashboardRepo)
 
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := gin.Default()
@@ -121,6 +123,31 @@ func main() {
 			acta.POST("",     actaH.Create)
 			acta.PUT("/:id",  actaH.Update)
 			acta.DELETE("/:id", actaH.Delete)
+		}
+
+		// Dashboard / métricas
+		dash := v1.Group("/dashboard")
+		{
+			dash.GET("/kpis",                  dashboardH.GetKPIs)
+			dash.GET("/votos-candidato",        dashboardH.GetVotosCandidato)
+			dash.GET("/participacion",          dashboardH.GetParticipacion)
+			dash.GET("/geografico",             dashboardH.GetGeografico)
+			dash.GET("/heatmap",                dashboardH.GetHeatmap)
+			dash.GET("/transparencia",          dashboardH.GetTransparencia)
+			dash.GET("/trazabilidad/:codigoActa", dashboardH.GetTrazabilidad)
+			dash.GET("/tecnico",                dashboardH.GetTecnico)
+			dash.GET("/anomalias",              dashboardH.GetAnomalias)
+			dash.GET("/logs/inconsistencias",   dashboardH.GetLogInconsistencias)
+		}
+
+		// Filtros cascada
+		filtros := v1.Group("/filtros")
+		{
+			filtros.GET("/departamentos", dashboardH.GetDepartamentos)
+			filtros.GET("/provincias",    dashboardH.GetProvincias)
+			filtros.GET("/municipios",    dashboardH.GetMunicipios)
+			filtros.GET("/recintos",      dashboardH.GetRecintos)
+			filtros.GET("/mesas",         dashboardH.GetMesas)
 		}
 	}
 
