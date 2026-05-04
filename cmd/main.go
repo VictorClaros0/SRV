@@ -47,21 +47,22 @@ func main() {
 
 	// ── Repositories ──────────────────────────────────────────────────────────
 	distribucionRepo := repository.NewDistribucionRepository(db)
-	recintoRepo      := repository.NewRecintoRepository(db)
-	mesaRepo         := repository.NewMesaRepository(db)
-	actaRepo         := repository.NewActaRepository(db)
-	rrvActaRepo      := repository.NewRRVActaRepository(db)
-	eventoRepo       := repository.NewEventoRepository(db)
-	dashboardRepo    := repository.NewDashboardRepository(db)
+	recintoRepo := repository.NewRecintoRepository(db)
+	mesaRepo := repository.NewMesaRepository(db)
+	actaRepo := repository.NewActaRepository(db)
+	rrvActaRepo := repository.NewRRVActaRepository(db)
+	eventoRepo := repository.NewEventoRepository(db)
+	dashboardRepo := repository.NewDashboardRepository(db)
 
 	// ── Handlers ──────────────────────────────────────────────────────────────
 	distribucionH := handlers.NewDistribucionHandler(distribucionRepo)
-	recintoH      := handlers.NewRecintoHandler(recintoRepo)
-	mesaH         := handlers.NewMesaHandler(mesaRepo)
-	actaH         := handlers.NewActaHandler(actaRepo)
-	twilioClient  := services.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioMessagingSID, cfg.TwilioFromNumber)
-	rrvH          := handlers.NewRRVHandler(rrvActaRepo, eventoRepo, twilioClient)
-	dashboardH    := handlers.NewDashboardHandler(dashboardRepo)
+	recintoH := handlers.NewRecintoHandler(recintoRepo)
+	mesaH := handlers.NewMesaHandler(mesaRepo)
+	actaH := handlers.NewActaHandler(actaRepo)
+	twilioClient := services.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioMessagingSID, cfg.TwilioFromNumber)
+	rrvH := handlers.NewRRVHandler(rrvActaRepo, eventoRepo, twilioClient)
+	ocrH := handlers.NewOCRHandler(actaRepo)
+	dashboardH := handlers.NewDashboardHandler(dashboardRepo)
 
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := gin.Default()
@@ -88,79 +89,82 @@ func main() {
 		// DistribucionTerritorial
 		dist := v1.Group("/distribuciones")
 		{
-			dist.GET("",      distribucionH.GetAll)
-			dist.GET("/:id",  distribucionH.GetByID)
-			dist.POST("",     distribucionH.Create)
-			dist.PUT("/:id",  distribucionH.Update)
+			dist.GET("", distribucionH.GetAll)
+			dist.GET("/:id", distribucionH.GetByID)
+			dist.POST("", distribucionH.Create)
+			dist.PUT("/:id", distribucionH.Update)
 			dist.DELETE("/:id", distribucionH.Delete)
 		}
 
 		// RecintoElectoral
 		rec := v1.Group("/recintos")
 		{
-			rec.GET("",      recintoH.GetAll)
-			rec.GET("/:id",  recintoH.GetByID)
-			rec.POST("",     recintoH.Create)
-			rec.PUT("/:id",  recintoH.Update)
+			rec.GET("", recintoH.GetAll)
+			rec.GET("/:id", recintoH.GetByID)
+			rec.POST("", recintoH.Create)
+			rec.PUT("/:id", recintoH.Update)
 			rec.DELETE("/:id", recintoH.Delete)
 		}
 
 		// Mesa
 		mesa := v1.Group("/mesas")
 		{
-			mesa.GET("",      mesaH.GetAll)
-			mesa.GET("/:id",  mesaH.GetByID)
-			mesa.POST("",     mesaH.Create)
-			mesa.PUT("/:id",  mesaH.Update)
+			mesa.GET("", mesaH.GetAll)
+			mesa.GET("/:id", mesaH.GetByID)
+			mesa.POST("", mesaH.Create)
+			mesa.PUT("/:id", mesaH.Update)
 			mesa.DELETE("/:id", mesaH.Delete)
 		}
 
 		// Acta
 		acta := v1.Group("/actas")
 		{
-			acta.GET("",      actaH.GetAll)
-			acta.GET("/:id",  actaH.GetByID)
-			acta.POST("",     actaH.Create)
-			acta.PUT("/:id",  actaH.Update)
+			acta.GET("", actaH.GetAll)
+			acta.GET("/:id", actaH.GetByID)
+			acta.POST("", actaH.Create)
+			acta.PUT("/:id", actaH.Update)
 			acta.DELETE("/:id", actaH.Delete)
 		}
 
 		// Dashboard / métricas
 		dash := v1.Group("/dashboard")
 		{
-			dash.GET("/kpis",                  dashboardH.GetKPIs)
-			dash.GET("/votos-candidato",        dashboardH.GetVotosCandidato)
-			dash.GET("/participacion",          dashboardH.GetParticipacion)
-			dash.GET("/geografico",             dashboardH.GetGeografico)
-			dash.GET("/heatmap",                dashboardH.GetHeatmap)
-			dash.GET("/transparencia",          dashboardH.GetTransparencia)
+			dash.GET("/kpis", dashboardH.GetKPIs)
+			dash.GET("/votos-candidato", dashboardH.GetVotosCandidato)
+			dash.GET("/participacion", dashboardH.GetParticipacion)
+			dash.GET("/geografico", dashboardH.GetGeografico)
+			dash.GET("/heatmap", dashboardH.GetHeatmap)
+			dash.GET("/transparencia", dashboardH.GetTransparencia)
 			dash.GET("/trazabilidad/:codigoActa", dashboardH.GetTrazabilidad)
-			dash.GET("/tecnico",                dashboardH.GetTecnico)
-			dash.GET("/anomalias",              dashboardH.GetAnomalias)
-			dash.GET("/logs/inconsistencias",   dashboardH.GetLogInconsistencias)
+			dash.GET("/tecnico", dashboardH.GetTecnico)
+			dash.GET("/anomalias", dashboardH.GetAnomalias)
+			dash.GET("/logs/inconsistencias", dashboardH.GetLogInconsistencias)
 		}
 
 		// Filtros cascada
 		filtros := v1.Group("/filtros")
 		{
 			filtros.GET("/departamentos", dashboardH.GetDepartamentos)
-			filtros.GET("/provincias",    dashboardH.GetProvincias)
-			filtros.GET("/municipios",    dashboardH.GetMunicipios)
-			filtros.GET("/recintos",      dashboardH.GetRecintos)
-			filtros.GET("/mesas",         dashboardH.GetMesas)
+			filtros.GET("/provincias", dashboardH.GetProvincias)
+			filtros.GET("/municipios", dashboardH.GetMunicipios)
+			filtros.GET("/recintos", dashboardH.GetRecintos)
+			filtros.GET("/mesas", dashboardH.GetMesas)
 		}
 	}
 
 	// ── RRV (Sebastian) ───────────────────────────────────────────────────────
 	rrv := r.Group("/api/rrv")
 	{
-		rrv.POST("/actas/upload",    rrvH.Upload)
-		rrv.POST("/sms",             rrvH.SMS)
-		rrv.POST("/webhook/sms",     rrvH.WebhookSMS) // Twilio envía aquí cuando llega un SMS al número virtual
-		rrv.GET("/actas",            rrvH.GetAll)
-		rrv.GET("/actas/:acta_id",   rrvH.GetByID)
-		rrv.GET("/eventos",          rrvH.GetEventos)
+		rrv.POST("/actas/upload", rrvH.Upload)
+		rrv.POST("/sms", rrvH.SMS)
+		rrv.POST("/webhook/sms", rrvH.WebhookSMS) // Twilio envía aquí cuando llega un SMS al número virtual
+		rrv.GET("/actas", rrvH.GetAll)
+		rrv.GET("/actas/:acta_id", rrvH.GetByID)
+		rrv.GET("/eventos", rrvH.GetEventos)
 	}
+
+	// ── OCR Optimizado (Goroutines) ───────────────────────────────────────────
+	r.POST("/api/ocr/scan-all", ocrH.ScanAll)
 
 	// ── Arrancar servidor ─────────────────────────────────────────────────────
 	log.Printf("🚀 Servidor iniciado en :%s", cfg.Port)

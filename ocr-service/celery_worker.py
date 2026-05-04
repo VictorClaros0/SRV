@@ -29,7 +29,7 @@ from paddleocr import PaddleOCR
 ocr_engine = PaddleOCR(use_angle_cls=True, lang='es', use_gpu=False)
 
 # URL de la API de Go
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://api:8080/api/v1")
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://api:8081/api/v1")
 
 # Caché local para el mapeo Codigo de Mesa -> IDMesa (MongoDB ObjectID)
 MESA_MAP_CACHE = {}
@@ -143,103 +143,126 @@ def process_pdf(pdf_path):
         logger.error(f"Error al convertir PDF ({filename}): {e}")
         return {"status": "error", "message": str(e)}
 
-    # 3. Realizar OCR
-    try:
-        result = ocr_engine.ocr(img, cls=True)
-        ocr_lines = result[0]
-        if not ocr_lines:
-            logger.warning(f"No se detectó texto en {filename}")
-            return {"status": "error", "message": "No se detectó texto"}
+    # 3. Realizar OCR con rotación automática si es necesario
+    ocr_lines = None
+    final_payload = None
+    
+    for attempt in range(4):
+        rotation_angle = attempt * 90
+        logger.info(f"Procesando {filename} - Intento {attempt + 1} (Rotación: {rotation_angle}°)")
         
-        detected_texts = [line[1][0] for line in ocr_lines]
-        logger.info(f"OCR en {filename}: {detected_texts}")
-    except Exception as e:
-        logger.error(f"Error durante OCR ({filename}): {e}")
-        return {"status": "error", "message": str(e)}
+        try:
+            result = ocr_engine.ocr(img, cls=True)
+            if not result or not result[0]:
+                logger.warning(f"No se detectó texto en {filename} con rotación {rotation_angle}°. Rotando 90°...")
+                img = np.rot90(img)
+                continue
+            
+            ocr_lines = result[0]
+            detected_texts = [line[1][0] for line in ocr_lines]
+            logger.info(f"OCR exitoso en {filename} ({rotation_angle}°): {len(detected_texts)} líneas detectadas.")
+        except Exception as e:
+            logger.error(f"Error durante OCR en intento {attempt + 1}: {e}")
+            img = np.rot90(img)
+            continue
 
-    # 4. Extraer los campos usando referencias espaciales
-    # Candidatos
-    p1 = find_value_near(ocr_lines, "Daenerys Targaryen")
-    p2 = find_value_near(ocr_lines, "Sansa Stark")
-    p3 = find_value_near(ocr_lines, "Robert Baratheon")
-    p4 = find_value_near(ocr_lines, "Tyrion Lannister")
-    
-    # Totales de votos
-    votos_validos = find_value_near(ocr_lines, "VOTOS VALIDOS")
-    votos_blancos = find_value_near(ocr_lines, "VOTOS BLANCOS")
-    votos_nulos = find_value_near(ocr_lines, "VOTOS NULOS")
-    
-    # Metadatos de ubicación
-    departamento = find_text_near(ocr_lines, "Departamento")
-    provincia = find_text_near(ocr_lines, "Provincia")
-    municipio = find_text_near(ocr_lines, "Municipio")
-    recinto = find_text_near(ocr_lines, "Recinto")
-    
-    # Datos adicionales de la mesa (Anclas completas de la imagen)
-    habilitados = find_value_near(ocr_lines, "ELECTORES HABILITADOS EN LA MESA")
-    papeletas_anfora = find_value_near(ocr_lines, "CANTIDAD TOTAL DE PAPELETAS EN ANFORA")
-    papeletas_no_usadas = find_value_near(ocr_lines, "CANTIDAD TOTAL DE PAPELETAS NO UTILIZADAS")
-    
-    # Tiempos
-    ap_hora = find_value_near(ocr_lines, "A horas")
-    ap_min = find_value_near(ocr_lines, "Minutos")
-    cierre_hora = find_value_near(ocr_lines, "concluy a horas")
-    cierre_min = 0 # Valor por defecto
-    
-    # Priorizar el número de mesa extraído del código del acta
+        # 4. Extraer los campos usando referencias espaciales
+        # Candidatos
+        p1 = find_value_near(ocr_lines, "Daenerys Targaryen")
+        p2 = find_value_near(ocr_lines, "Sansa Stark")
+        p3 = find_value_near(ocr_lines, "Robert Baratheon")
+        p4 = find_value_near(ocr_lines, "Tyrion Lannister")
+        
+        # Totales de votos
+        votos_validos = find_value_near(ocr_lines, "VOTOS VALIDOS")
+        votos_blancos = find_value_near(ocr_lines, "VOTOS BLANCOS")
+        votos_nulos = find_value_near(ocr_lines, "VOTOS NULOS")
+        
+        # Metadatos de ubicación
+        departamento = find_text_near(ocr_lines, "Departamento")
+        provincia = find_text_near(ocr_lines, "Provincia")
+        municipio = find_text_near(ocr_lines, "Municipio")
+        recinto = find_text_near(ocr_lines, "Recinto")
+        
+        # Datos adicionales de la mesa
+        habilitados = find_value_near(ocr_lines, "ELECTORES HABILITADOS EN LA MESA")
+        papeletas_anfora = find_value_near(ocr_lines, "CANTIDAD TOTAL DE PAPELETAS EN ANFORA")
+        papeletas_no_usadas = find_value_near(ocr_lines, "CANTIDAD TOTAL DE PAPELETAS NO UTILIZADAS")
+        
+        # Tiempos
+        ap_hora = find_value_near(ocr_lines, "A horas")
+        ap_min = find_value_near(ocr_lines, "Minutos")
+        cierre_hora = find_value_near(ocr_lines, "concluy a horas")
+        cierre_min = 0
+        
+        # 5. Comprobar si hay campos críticos ilegibles
+        campos_criticos = {
+            "p1": p1, "p2": p2, "p3": p3, "p4": p4,
+            "votosNulos": votos_nulos, "votosBlanco": votos_blancos, "votosValidos": votos_validos
+        }
+        
+        campos_ilegibles = [k for k, v in campos_criticos.items() if v is None]
+        
+        # Si faltan TODOS los campos críticos, probablemente la orientación es incorrecta
+        if len(campos_ilegibles) == len(campos_criticos):
+            logger.warning(f"Ningún campo crítico detectado en {filename} ({rotation_angle}°). Rotando 90°...")
+            img = np.rot90(img)
+            continue
+            
+        # Si llegamos aquí, al menos algo se detectó.
+        # Si aún hay ilegibles, los registramos pero ya no rotamos (podría ser mala calidad de imagen, no orientación)
+        if campos_ilegibles:
+            log_dir = "/app/data/logs"
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, "unreadable_records.log")
+            mensaje = f"Mesa: {codigo_mesa} | Archivo: {filename} | Ilegibles: {', '.join(campos_ilegibles)} | Rotación: {rotation_angle}°\n"
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(mensaje)
+            
+            # Si el usuario quiere detenerse si hay CUALQUIER ilegible, podríamos 'continue' aquí.
+            # Pero el requerimiento dice "hasta que se detecte algo". 
+            # Interpretamos "algo" como al menos un campo crítico.
+        
+        # 6. Armar el Payload
+        try:
+            mesa_num = int(codigo_mesa[-3:])
+        except:
+            mesa_num = 0
+
+        final_payload = {
+            "papeletasNoUsadas": papeletas_no_usadas or 0,
+            "p1": p1,
+            "p2": p2,
+            "p3": p3,
+            "p4": p4,
+            "votosNulos": votos_nulos,
+            "votosBlanco": votos_blancos,
+            "votosValidos": votos_validos,
+            "codigoMesa": codigo_mesa,
+            "mesa": mesa_num,
+            "departamento": departamento,
+            "provincia": provincia,
+            "municipio": municipio,
+            "recinto": recinto,
+            "votantesHabilitados": habilitados or 0,
+            "papeletasAnfora": papeletas_anfora or 0,
+            "aperturaHora": ap_hora or 0,
+            "aperturaMinutos": ap_min or 0,
+            "cierreHora": cierre_hora or 0,
+            "cierreMinutos": cierre_min or 0,
+            "tipoCliente": "OCR"
+        }
+        break # Éxito en la detección, salimos del bucle de rotación
+
+    if not final_payload:
+        logger.error(f"No se pudo extraer información de {filename} tras 4 intentos de rotación.")
+        return {"status": "error", "message": "No se detectó información tras rotaciones"}
+
+    logger.info(f"Datos extraídos para {codigo_mesa}: {final_payload}")
+
+    # 7. Enviar a la API de Go
     try:
-        mesa_num = int(codigo_mesa[-3:])
-    except:
-        pass
-
-    # 5. Comprobar si hay campos críticos ilegibles
-    campos_criticos = {
-        "p1": p1, "p2": p2, "p3": p3, "p4": p4,
-        "votosNulos": votos_nulos, "votosBlanco": votos_blancos, "votosValidos": votos_validos
-    }
-    
-    campos_ilegibles = [k for k, v in campos_criticos.items() if v is None]
-    
-    if campos_ilegibles:
-        log_dir = "/app/data/logs"
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, "unreadable_records.log")
-        mensaje = f"Mesa: {codigo_mesa} | Archivo: {filename} | Ilegibles: {', '.join(campos_ilegibles)}\n"
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(mensaje)
-        return {"status": "error", "message": f"Campos ilegibles: {', '.join(campos_ilegibles)}"}
-
-    # 6. Armar el Payload con los datos extraídos
-    payload = {
-        "papeletasNoUsadas": papeletas_no_usadas or 0,
-        "p1": p1,
-        "p2": p2,
-        "p3": p3,
-        "p4": p4,
-        "votosNulos": votos_nulos,
-        "votosBlanco": votos_blancos,
-        "votosValidos": votos_validos,
-        "codigoMesa": codigo_mesa,
-        "mesa": mesa_num,
-        "departamento": departamento,
-        "provincia": provincia,
-        "municipio": municipio,
-        "recinto": recinto,
-        "votantesHabilitados": habilitados or 0,
-        "papeletasAnfora": papeletas_anfora or 0,
-        "aperturaHora": ap_hora or 0,
-        "aperturaMinutos": ap_min or 0,
-        "cierreHora": cierre_hora or 0,
-        "cierreMinutos": cierre_min or 0,
-        "tipoCliente": "OCR"
-    }
-    
-    logger.info(f"Datos extraídos para {codigo_mesa}: {payload}")
-
-    # 6. Enviar a la API de Go
-    try:
-        # En el proyecto Go existe POST /api/v1/actas
-        response = requests.post(f"{API_BASE_URL}/actas", json=payload)
+        response = requests.post(f"{API_BASE_URL}/actas", json=final_payload)
         response.raise_for_status()
         logger.info(f"Acta guardada correctamente para la mesa {codigo_mesa}")
         return {"status": "success", "codigo": codigo_mesa}

@@ -12,7 +12,7 @@ type Config struct {
 	TwilioMessagingSID string
 	// Número verificado en la cuenta Twilio trial para enviar confirmaciones.
 	// En producción puede ser cualquier número habilitado por Twilio.
-	TwilioFromNumber   string
+	TwilioFromNumber string
 }
 
 // Load carga la configuración desde variables de entorno con valores por defecto.
@@ -20,7 +20,7 @@ func Load() *Config {
 	return &Config{
 		MongoURI:           getEnv("MONGO_URI", "mongodb://localhost:27017"),
 		DBName:             getEnv("DB_NAME", "electoral_db"),
-		Port:               getEnv("PORT", "8080"),
+		Port:               getEnv("PORT", "8081"),
 		TwilioAccountSID:   getEnv("TWILIO_ACCOUNT_SID", ""),
 		TwilioAuthToken:    getEnv("TWILIO_AUTH_TOKEN", ""),
 		TwilioMessagingSID: getEnv("TWILIO_MESSAGING_SERVICE_SID", ""),

@@ -25,7 +25,7 @@ Los servicios que levanta:
 
 | Servicio | Puerto | Descripción |
 |---|---|---|
-| API Go (métricas) | `8080` | Backend principal con todos los endpoints |
+| API Go (métricas) | `8081` | Backend principal con todos los endpoints |
 | OCR API (FastAPI) | `8000` | Servicio de procesamiento de imágenes |
 | MongoDB Replica Set | `27017` | Base de datos principal |
 | Redis | `6379` | Broker de tareas Celery |
@@ -51,7 +51,7 @@ Esto encola todos los PDFs en `./data/logs/PdfOutput/` para que el worker de Cel
 
 ## Endpoints del Dashboard
 
-Base URL: `http://localhost:8080/api/v1/dashboard`
+Base URL: `http://localhost:1/api/v1/dashboard`
 
 ### KPIs Generales
 ```
@@ -179,7 +179,7 @@ Respuesta de ejemplo:
 
 ## Endpoints de Filtros en Cascada
 
-Base URL: `http://localhost:8080/api/v1/filtros`
+Base URL: `http://localhost:8081/api/v1/filtros`
 
 Usar para poblar los dropdowns de filtro en el dashboard, en este orden:
 
