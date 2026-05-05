@@ -1,0 +1,165 @@
+services:
+  # ── MongoDB Node 1 (Primary) ────────────────────────────────────────────────
+  mongo1:
+    image: mongo:7
+    container_name: electoral_mongo1
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+    networks:
+      - electoral_net
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MongoDB Node 2 (Secondary) ──────────────────────────────────────────────
+  mongo2:
+    image: mongo:7
+    container_name: electoral_mongo2
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27018" ]
+    restart: unless-stopped
+    ports:
+      - "27018:27018"
+    volumes:
+      - mongo2_data:/data/db
+    networks:
+      - electoral_net
+    healthcheck:
+      test: [ "CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MongoDB Arbiter ─────────────────────────────────────────────────────────
+  mongo-arbiter:
+    image: mongo:7
+    container_name: electoral_mongo_arbiter
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27019" ]
+    restart: unless-stopped
+    ports:
+      - "27019:27019"
+    networks:
+      - electoral_net
+    healthcheck:
+      test: [ "CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MongoDB Setup (Inicializa el Replica Set) ───────────────────────────────
+  mongo-setup:
+    image: mongo:7
+    container_name: electoral_mongo_setup
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo-arbiter:
+        condition: service_healthy
+    networks:
+      - electoral_net
+    # El script espera a que los nodos estén listos y configura el Replica Set
+    command: >
+      bash -c "
+        mongosh --host mongo1:27017 --eval '
+          try {
+            rs.status();
+            console.log(\"Replica Set ya está inicializado\");
+          } catch(err) {
+            console.log(\"Inicializando Replica Set...\");
+            rs.initiate({
+              _id: \"rs0\",
+              members: [
+                { _id: 0, host: \"mongo1:27017\", priority: 2 },
+                { _id: 1, host: \"mongo2:27018\", priority: 1 },
+                { _id: 2, host: \"mongo-arbiter:27019\", arbiterOnly: true }
+              ]
+            });
+            console.log(\"Replica Set inicializado correctamente.\");
+          }'
+      "
+
+  # ── API Go ───────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: electoral_api
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      # Conexión al Replica Set completo
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27018/?replicaSet=rs0
+      DB_NAME: electoral_db
+      PORT: "8081"
+      # ── Twilio (Sebastian — módulo RRV) ───────────────────────────────────────
+      # Los valores se leen desde el archivo .env en la raíz del proyecto (no commiteado).
+      # Copia .env.example a .env y rellena con las credenciales reales de Twilio.
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
+      TWILIO_VERIFIED_NUMBER: ${TWILIO_VERIFIED_NUMBER}
+      # Números autorizados para recibir SMS (separados por coma, sin prefijo +591)
+      SMS_DEFAULT_NUMBERS: ${SMS_DEFAULT_NUMBERS:-65707079}
+    depends_on:
+      mongo-setup:
+        condition: service_completed_successfully
+    volumes:
+      - ./data/logs/PdfOutput:/app/data/PdfOutput
+    networks:
+      - electoral_net
+
+  # ── Redis (Broker para Celery) ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: electoral_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - electoral_net
+
+  # ── OCR API (FastAPI) ────────────────────────────────────────────────────────
+  ocr-api:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./data/logs:/app/data/logs
+      - ./data/logs/PdfOutput:/app/data/PdfOutput
+      - ./ocr-service/main.py:/app/main.py
+      - paddleocr_models:/root/.paddleocr
+    networks:
+      - electoral_net
+    # Descomenta las siguientes líneas si tienes Docker configurado para GPUs (NVIDIA Container Toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+    # ── Volúmenes ────────────────────────────────────────────────────────────────
+volumes:
+  mongo1_data:
+    driver: local
+  mongo2_data:
+    driver: local
+  paddleocr_models:
+    driver: local
+# ── Redes ────────────────────────────────────────────────────────────────────
+networks:
+  electoral_net:
+    driver: bridge
