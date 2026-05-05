@@ -20,6 +20,9 @@ import { TecnicoPanel } from "../components/TecnicoPanel";
 import { AnomaliasRRVPanel } from "../components/AnomaliasRRVPanel";
 import { LogsInconsistenciasPanel } from "../components/LogsInconsistenciasPanel";
 import { ParticipacionComparativa } from "../components/ParticipacionComparativa";
+import { VotosCandidatoChartRRV } from "../components/VotosCandidatoChartRRV";
+import { ParticipacionChartRRV } from "../components/ParticipacionChartRRV";
+import { GeograficoPanelRRV } from "../components/GeograficoPanelRRV";
 
 const DEFAULT_FILTERS: DashboardFilters = {
     departamento: "",
@@ -71,7 +74,12 @@ export const DashboardPage = () => {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <VotosCandidatoChart filters={filters} />
+                    <VotosCandidatoChartRRV filters={filters} />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <ParticipacionChart filters={filters} />
+                    <ParticipacionChartRRV filters={filters} />
                 </div>
 
                 <ComparacionVotosCandidato />
@@ -88,6 +96,8 @@ export const DashboardPage = () => {
                 <ComparacionGeografica />
 
                 <GeograficoPanel filters={filters} />
+
+                <GeograficoPanelRRV filters={filters} />
 
                 <TransparenciaPanel />
 
