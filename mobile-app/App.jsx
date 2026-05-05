@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { StatusBar } from 'expo-status-bar'
 
 // ── Configuración ─────────────────────────────────────────────────────────────
-const DEFAULT_BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://192.168.1.100:8081'
+const DEFAULT_BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://192.168.100.31:8080'
 const ANTHROPIC_KEY   = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || ''
 
 // ── Prompt OCR (idéntico al web scanner) ──────────────────────────────────────
@@ -122,19 +122,32 @@ async function callClaudeOCR(base64, mediaType = 'image/jpeg') {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [screen, setScreen] = useState('loading')
-  const [user, setUser] = useState({ usuario: 'movil' })
+  const [user, setUser] = useState(null)
+  const [token, setToken] = useState(null)
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND)
 
   useEffect(() => {
-    AsyncStorage.removeItem('backendUrl').finally(() => {
-      setBackendUrl(DEFAULT_BACKEND)
-      setScreen('scanner')
+    Promise.all([
+      AsyncStorage.getItem('user'),
+      AsyncStorage.getItem('token'),
+      AsyncStorage.getItem('backendUrl'),
+    ]).then(([u, t, b]) => {
+      if (b) setBackendUrl(b)
+      if (u && t) { setUser(JSON.parse(u)); setToken(t); setScreen('scanner') }
+      else setScreen('login')
     })
   }, [])
 
+  const handleLogin = useCallback(async (u, t) => {
+    setUser(u); setToken(t)
+    await AsyncStorage.setItem('user', JSON.stringify(u))
+    await AsyncStorage.setItem('token', t)
+    setScreen('scanner')
+  }, [])
+
   const handleLogout = useCallback(async () => {
-    await AsyncStorage.removeItem('backendUrl')
-    setBackendUrl(DEFAULT_BACKEND)
+    await AsyncStorage.multiRemove(['user', 'token'])
+    setUser(null); setToken(null); setScreen('login')
   }, [])
 
   const handleSaveBackend = useCallback(async (url) => {
@@ -147,8 +160,11 @@ export default function App() {
       <ActivityIndicator color="#fff" size="large" />
     </View>
   )
+  if (screen === 'login') return (
+    <LoginScreen backendUrl={backendUrl} onSaveBackend={handleSaveBackend} onLogin={handleLogin} />
+  )
   if (screen === 'scanner') return (
-    <ScannerScreen backendUrl={backendUrl} user={user} onLogout={handleLogout} onSaveBackend={handleSaveBackend} />
+    <ScannerScreen backendUrl={backendUrl} token={token} user={user} onLogout={handleLogout} />
   )
   return null
 }
@@ -220,10 +236,8 @@ function LoginScreen({ backendUrl, onSaveBackend, onLogin }) {
 }
 
 // ── ScannerScreen ─────────────────────────────────────────────────────────────
-function ScannerScreen({ backendUrl, user, onLogout, onSaveBackend }) {
+function ScannerScreen({ backendUrl, token, user, onLogout }) {
   const [phase, setPhase] = useState('idle') // idle | processing | result | done
-  const [urlInput, setUrlInput] = useState(backendUrl)
-  const [backendStatus, setBackendStatus] = useState({ state: 'checking', text: 'Verificando backend...' })
   const [imageUri, setImageUri] = useState(null)
   const [imageBase64, setImageBase64] = useState(null)
   const [progress, setProgress] = useState({ pct: 0, text: '' })
@@ -236,37 +250,6 @@ function ScannerScreen({ backendUrl, user, onLogout, onSaveBackend }) {
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [saving, setSaving] = useState(false)
-
-  const checkBackend = useCallback(async (url = backendUrl) => {
-    const cleanUrl = url.trim().replace(/\/$/, '')
-    setBackendStatus({ state: 'checking', text: 'Verificando backend...' })
-    try {
-      const resp = await fetch(`${cleanUrl}/health`)
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-      const data = await resp.json()
-      if (data.status !== 'ok') throw new Error(data.error || 'Backend sin base de datos')
-      setBackendStatus({ state: 'ok', text: `Conectado a ${cleanUrl}` })
-      return true
-    } catch (e) {
-      setBackendStatus({ state: 'error', text: `Sin conexion con ${cleanUrl}` })
-      return false
-    }
-  }, [backendUrl])
-
-  useEffect(() => {
-    setUrlInput(backendUrl)
-    checkBackend(backendUrl)
-  }, [backendUrl, checkBackend])
-
-  async function saveBackendUrl() {
-    const cleanUrl = urlInput.trim().replace(/\/$/, '')
-    if (!cleanUrl) {
-      Alert.alert('URL requerida', 'Ingresa la URL del backend de la computadora.')
-      return
-    }
-    await onSaveBackend(cleanUrl)
-    checkBackend(cleanUrl)
-  }
 
   function resetAll() {
     setPhase('idle'); setImageUri(null); setImageBase64(null)
@@ -286,9 +269,9 @@ function ScannerScreen({ backendUrl, user, onLogout, onSaveBackend }) {
 
     if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0]
-      resetAll()
       setImageUri(asset.uri)
       setImageBase64(asset.base64)
+      resetAll()
       setPhase('idle')
     }
   }
@@ -333,7 +316,7 @@ function ScannerScreen({ backendUrl, user, onLogout, onSaveBackend }) {
 
     setSaving(true)
     try {
-      const headers = { 'Content-Type': 'application/json' }
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
       const base = (f, def) => f != null ? Number(f) : def
 
       if (type === 'aceptada') {
@@ -405,35 +388,10 @@ function ScannerScreen({ backendUrl, user, onLogout, onSaveBackend }) {
       <View style={s.header}>
         <Text style={s.headerTitle}>Scanner RRV</Text>
         <Text style={s.headerUser}>{user?.usuario || user?.nombre || ''}</Text>
-        <TouchableOpacity onPress={onLogout}><Text style={s.logoutBtn}>Reset IP</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onLogout}><Text style={s.logoutBtn}>Salir</Text></TouchableOpacity>
       </View>
 
       <ScrollView style={ss.flex1} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <View style={s.card}>
-          <Text style={s.cardTitle}>Backend de la computadora</Text>
-          <TextInput
-            style={s.input}
-            value={urlInput}
-            onChangeText={setUrlInput}
-            placeholder="http://IP-DE-TU-PC:8080"
-            placeholderTextColor="#aaa"
-            autoCapitalize="none"
-            keyboardType="url"
-          />
-          <View style={[s.btnRow, { marginTop: 10 }]}>
-            <TouchableOpacity style={[s.captureBtn, { flex: 1 }]} onPress={saveBackendUrl}>
-              <Text style={s.captureBtnText}>Guardar IP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.captureBtn, { flex: 1, backgroundColor: '#0ea5e9' }]} onPress={() => checkBackend(urlInput)}>
-              <Text style={s.captureBtnText}>Probar</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={[s.statusBox, backendStatus.state === 'ok' ? s.statusOk : backendStatus.state === 'error' ? s.statusError : s.statusChecking]}>
-            <Text style={[s.statusText, backendStatus.state === 'ok' ? s.statusOkText : backendStatus.state === 'error' ? s.statusErrorText : s.statusCheckingText]}>
-              {backendStatus.text}
-            </Text>
-          </View>
-        </View>
 
         {/* Captura de imagen */}
         <View style={s.card}>
@@ -653,14 +611,6 @@ const s = StyleSheet.create({
   progressBg: { height: 8, borderRadius: 4, backgroundColor: '#f0f0f0', overflow: 'hidden', marginBottom: 4 },
   progressFill: { height: '100%', backgroundColor: '#6c5ce7', borderRadius: 4 },
   progressText: { fontSize: 12, color: '#888' },
-  statusBox: { borderWidth: 1.5, borderRadius: 8, padding: 10, marginTop: 10 },
-  statusText: { fontSize: 12, fontWeight: '700' },
-  statusOk: { borderColor: '#22c55e', backgroundColor: '#f0fff4' },
-  statusError: { borderColor: '#ef4444', backgroundColor: '#fff0f0' },
-  statusChecking: { borderColor: '#0ea5e9', backgroundColor: '#f0f9ff' },
-  statusOkText: { color: '#16a34a' },
-  statusErrorText: { color: '#c0392b' },
-  statusCheckingText: { color: '#0369a1' },
   // Alerts
   alertBox: { borderWidth: 1.5, borderRadius: 8, padding: 10, marginBottom: 8 },
   alertTitle: { fontSize: 12, fontWeight: '800', marginBottom: 2 },

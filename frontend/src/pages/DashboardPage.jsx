@@ -5,7 +5,8 @@ import ErrorState from '../components/ErrorState.jsx'
 import KPICards from '../components/dashboard/KPICards.jsx'
 import RRVvsOficialChart from '../components/dashboard/RRVvsOficialChart.jsx'
 import VotosCandidatoChart from '../components/dashboard/VotosCandidatoChart.jsx'
-import ParticipacionChart from '../components/dashboard/ParticipacionChart.jsx'
+import VotosDistribucionChart from '../components/dashboard/VotosDistribucionChart.jsx'
+import MobileScansPanel from '../components/dashboard/MobileScansPanel.jsx'
 import GeograficoPanel from '../components/dashboard/GeograficoPanel.jsx'
 import TecnicoPanel from '../components/dashboard/TecnicoPanel.jsx'
 import ResultadosOficialesPanel from '../components/dashboard/ResultadosOficialesPanel.jsx'
@@ -31,7 +32,6 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState(null)
   const [rrv, setRrv] = useState(null)
   const [votos, setVotos] = useState(null)
-  const [part, setPart] = useState(null)
   const [tecnico, setTecnico] = useState(null)
   const [resultadosOficiales, setResultadosOficiales] = useState(null)
   const [auditoriaOficial, setAuditoriaOficial] = useState(null)
@@ -44,11 +44,10 @@ export default function DashboardPage() {
     setLoading(true)
     setError('')
     try {
-      const [k, r, v, p, t, ro, ao, ev] = await Promise.all([
+      const [k, r, v, t, ro, ao, ev] = await Promise.all([
         api.dashboard.getKPIs(),
         api.dashboard.getRRVvsOficial(),
         api.dashboard.getVotosCandidato(),
-        api.dashboard.getParticipacion(),
         api.dashboard.getTecnico(),
         api.oficial.getResultados(),
         api.oficial.getAuditoria(),
@@ -57,7 +56,6 @@ export default function DashboardPage() {
       setKpis(k)
       setRrv(r)
       setVotos(v)
-      setPart(p)
       setTecnico(t)
       setResultadosOficiales(ro)
       setAuditoriaOficial(ao)
@@ -94,10 +92,15 @@ export default function DashboardPage() {
         <VotosCandidatoChart data={votos} />
       </div>
 
-      {/* Participación + Técnico */}
+      {/* Distribución de votos + Técnico */}
       <div style={s.grid2}>
-        <ParticipacionChart data={part} />
+        <VotosDistribucionChart data={votos} />
         <TecnicoPanel data={tecnico} />
+      </div>
+
+      {/* Escaneos desde app móvil (Firebase) */}
+      <div style={{ marginBottom: 16 }}>
+        <MobileScansPanel />
       </div>
 
       {/* Geográfico — maneja su propio estado */}

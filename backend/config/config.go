@@ -30,8 +30,6 @@ type Config struct {
 	SMSConfigCollection string
 	// n8n
 	N8NWebhookURL string
-	// OCR2: URL del SRV-ocr2 para reenviar SMS procesados
-	OCR2SMSForwardURL string
 }
 
 // Load lee variables de entorno; intenta cargar .env si existe.
@@ -57,7 +55,6 @@ func Load() *Config {
 		SMSDefaultNumbers:     getEnvList("SMS_AUTHORIZED_NUMBERS", "65707079"),
 		SMSConfigCollection:   getEnv("SMS_CONFIG_COLLECTION", "sms_config"),
 		N8NWebhookURL:         getEnv("N8N_TRIGGER_WEBHOOK_URL", "http://n8n:5678/webhook/trigger-transcripcion"),
-		OCR2SMSForwardURL:     getEnv("OCR2_SMS_FORWARD_URL", "http://localhost:8081/api/rrv/sms/inbound"),
 	}
 }
 

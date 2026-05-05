@@ -79,21 +79,6 @@ export const api = {
     },
   },
 
-  // Flujo n8n de srov22: React dispara el webhook de n8n directamente.
-  // n8n lee /api/v1/actas/para-transcribir y llama /webhook/n8n/transcripcion.
-  simularTranscripcion: () =>
-    fetch('/n8n/webhook/trigger-transcripcion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    }).then(async r => {
-      if (!r.ok) {
-        const txt = await r.text().catch(() => r.statusText)
-        throw new Error(txt || 'n8n no respondió. ¿El workflow está activo?')
-      }
-      return r.json().catch(() => ({ ok: true }))
-    }),
-
   // ─── Dashboard ───────────────────────────────────────────────────────────────
   // Todos los endpoints son GET de solo lectura. No calculan nada en frontend.
 
@@ -108,8 +93,6 @@ export const api = {
     getInconsistencias: () => request('GET', '/dashboard/inconsistencias'),
     getEventosRRV: () => request('GET', '/dashboard/eventos-rrv'),
     getMobileScans: () => request('GET', '/dashboard/mobile-scans'),
-    processPDFOutput: () => request('POST', '/dashboard/scanner/pdf-output', {}),
-    resetConteos: () => request('POST', '/dashboard/reset-conteos', {}),
   },
 
   // ─── Canal SMS ───────────────────────────────────────────────────────────────

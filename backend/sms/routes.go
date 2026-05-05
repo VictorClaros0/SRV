@@ -24,7 +24,7 @@ func RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup, mongoClient *mong
 		cfg.SMSConfigCollection,
 		cfg.SMSDefaultNumbers,
 	)
-	h := NewHandler(store, cfg.OCR2SMSForwardURL)
+	h := NewHandler(store)
 
 	// Público: no requiere JWT (igual que /webhook/n8n/transcripcion)
 	r.POST("/api/v1/rrv/sms/inbound", h.InboundSMS)

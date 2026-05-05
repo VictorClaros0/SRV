@@ -22,6 +22,4 @@ func RegisterRoutes(protected *gin.RouterGroup, db *gorm.DB, mongoClient *mongo.
 	d.GET("/inconsistencias", h.Inconsistencias)
 	d.GET("/eventos-rrv", h.EventosRRV)
 	d.GET("/mobile-scans", h.MobileScans)
-	d.POST("/scanner/pdf-output", h.ProcessPDFOutput)
-	d.POST("/reset-conteos", h.ResetConteos)
 }

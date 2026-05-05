@@ -16,15 +16,14 @@ var camposObligatorios = []string{"MESA", "P1", "P2", "P3", "P4", "BLANCOS", "NU
 
 // DatosActa contiene los datos parseados del cuerpo del SMS.
 type DatosActa struct {
-	Mesa         string `bson:"mesa"          json:"mesa"`
-	P1           int    `bson:"p1"            json:"p1"`
-	P2           int    `bson:"p2"            json:"p2"`
-	P3           int    `bson:"p3"            json:"p3"`
-	P4           int    `bson:"p4"            json:"p4"`
-	Blancos      int    `bson:"blancos"       json:"blancos"`
-	Nulos        int    `bson:"nulos"         json:"nulos"`
-	Total        int    `bson:"total"         json:"total"`
-	Observaciones string `bson:"observaciones" json:"observaciones,omitempty"`
+	Mesa    string `bson:"mesa"    json:"mesa"`
+	P1      int    `bson:"p1"      json:"p1"`
+	P2      int    `bson:"p2"      json:"p2"`
+	P3      int    `bson:"p3"      json:"p3"`
+	P4      int    `bson:"p4"      json:"p4"`
+	Blancos int    `bson:"blancos" json:"blancos"`
+	Nulos   int    `bson:"nulos"   json:"nulos"`
+	Total   int    `bson:"total"   json:"total"`
 }
 
 // ParseSMS parsea el cuerpo del SMS con formato: RRV|MESA=...|P1=...|... o con @ en lugar de |
@@ -86,15 +85,14 @@ func ParseSMS(body string) (*DatosActa, error) {
 	}
 
 	return &DatosActa{
-		Mesa:          strings.TrimSpace(campos["MESA"]),
-		P1:            p1,
-		P2:            p2,
-		P3:            p3,
-		P4:            p4,
-		Blancos:       blancos,
-		Nulos:         nulos,
-		Total:         total,
-		Observaciones: strings.TrimSpace(campos["OBS"]),
+		Mesa:    strings.TrimSpace(campos["MESA"]),
+		P1:      p1,
+		P2:      p2,
+		P3:      p3,
+		P4:      p4,
+		Blancos: blancos,
+		Nulos:   nulos,
+		Total:   total,
 	}, nil
 }
 
