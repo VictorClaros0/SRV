@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/practica4/SRV/frontend/src/components/dashboard/**)",
+      "Read(//c/practica4/SRV/backend/rrv/**)"
+    ]
+  }
+}

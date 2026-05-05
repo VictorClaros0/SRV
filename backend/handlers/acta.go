@@ -78,12 +78,6 @@ func (h *ActaHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// Verificar duplicado por codigoActa
-	var existing models.Acta
-	if err := h.DB.Where("codigo_acta = ?", a.CodigoActa).First(&existing).Error; err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Ya existe un acta con ese código. No se permiten actas duplicadas."})
-		return
-	}
 	uid, ok := middleware.UserIDFromContext(c)
 	if ok {
 		a.CreadoPorID = &uid

@@ -58,6 +58,7 @@ type ActaSMS struct {
 	TotalDeclarado int           `bson:"total_declarado" json:"total_declarado"`
 	TotalCalculado int           `bson:"total_calculado" json:"total_calculado"`
 	Duplicado      bool          `bson:"duplicado" json:"duplicado"`
+	Observaciones  string        `bson:"observaciones,omitempty" json:"observaciones,omitempty"`
 	FechaRecepcion time.Time     `bson:"fecha_recepcion" json:"fecha_recepcion"`
 	FechaProcesado time.Time     `bson:"fecha_procesado" json:"fecha_procesado"`
 }

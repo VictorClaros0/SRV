@@ -7,8 +7,8 @@ const CONFIG = {
   FIREBASE_RTDB: 'https://lawdocs-75aef-default-rtdb.firebaseio.com',
   CLOUDINARY_CLOUD_NAME: 'dk5u8dljb',
   CLOUDINARY_API_KEY: '779231566857641',
-  CLOUDINARY_API_SECRET: 'GFzuC8LmqeqAVZQfnOFBa5yrKzA',
-  ANTHROPIC_API_KEY: 'TU_API_KEY_AQUI',
+  CLOUDINARY_API_SECRET: '',
+  ANTHROPIC_API_KEY: '',
   // URL del backend local. Se puede sobreescribir desde Firebase RTDB en /config/backend_url
   BACKEND_URL: 'http://192.168.100.31:8080',
 };

@@ -18,12 +18,14 @@ var camposCuerpo = []string{"body", "message", "text", "content", "sms", "Body"}
 
 // Handler gestiona los endpoints HTTP del módulo SMS.
 type Handler struct {
-	store *Store
+	store      *Store
+	forwardURL string
 }
 
 // NewHandler construye un Handler para el módulo SMS.
-func NewHandler(store *Store) *Handler {
-	return &Handler{store: store}
+// forwardURL es la URL del SRV-ocr2 donde se reenvían los SMS recibidos (puede ser "").
+func NewHandler(store *Store, forwardURL string) *Handler {
+	return &Handler{store: store, forwardURL: forwardURL}
 }
 
 // InboundSMS recibe el webhook de SMS Forwarder y procesa el mensaje.
@@ -203,6 +205,7 @@ func (h *Handler) InboundSMS(c *gin.Context) {
 		TotalDeclarado: datos.Total,
 		TotalCalculado: totalCalculado,
 		Duplicado:      duplicadoFlag,
+		Observaciones:  datos.Observaciones,
 		FechaRecepcion: timestamp,
 		FechaProcesado: time.Now(),
 	}
@@ -228,6 +231,11 @@ func (h *Handler) InboundSMS(c *gin.Context) {
 
 	log.Printf("[SMS-INBOUND] acta guardada acta_id=%s mesa=%s estado=%s total_dec=%d total_calc=%d dup=%v",
 		actaID, datos.Mesa, estado, datos.Total, totalCalculado, duplicadoFlag)
+
+	// Reenviar al SRV-ocr2 en background para que también lo procese
+	if h.forwardURL != "" {
+		go h.reenviarAOCR2(rawBody)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"ok":              true,
@@ -294,11 +302,21 @@ func (h *Handler) RemoveNumero(c *gin.Context) {
 // GetHistorial obtiene el historial reciente de mensajes SMS.
 func (h *Handler) GetHistorial(c *gin.Context) {
 	ctx := c.Request.Context()
-	// Obtener los últimos 50 mensajes por ejemplo
 	actas, err := h.store.GetRecentSMS(ctx, 50)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"historial": actas})
+}
+
+// reenviarAOCR2 reenvía el payload raw al SRV-ocr2 para que lo procese independientemente.
+func (h *Handler) reenviarAOCR2(rawBody []byte) {
+	resp, err := http.Post(h.forwardURL, "application/json", bytes.NewReader(rawBody))
+	if err != nil {
+		log.Printf("[SMS-FORWARD] error reenviando a OCR2: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	log.Printf("[SMS-FORWARD] OCR2 respondió status=%d", resp.StatusCode)
 }
