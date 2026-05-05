@@ -25,21 +25,31 @@ export interface RrvGeoFilters {
     departamento?: string;
     provincia?: string;
     municipio?: string;
+    recinto?: string;
+    mesa?: string;
 }
 
+const cleanGeo = (f: RrvGeoFilters = {}) => ({
+    departamento: f.departamento || undefined,
+    provincia: f.provincia || undefined,
+    municipio: f.municipio || undefined,
+    recinto: f.recinto || undefined,
+    mesa: f.mesa || undefined,
+});
+
 export const rrvService = {
-    getKPIs: () => get<RrvKpis>("dashboard/kpis"),
+    getKPIs: (f?: RrvGeoFilters) => get<RrvKpis>("dashboard/kpis", cleanGeo(f)),
 
-    getVotosCandidato: () => get<RrvVotosCandidatoResponse>("dashboard/votos-candidato"),
+    getVotosCandidato: (f?: RrvGeoFilters) =>
+        get<RrvVotosCandidatoResponse>("dashboard/votos-candidato", cleanGeo(f)),
 
-    getParticipacion: () => get<RrvParticipacion>("dashboard/participacion"),
+    getParticipacion: (f?: RrvGeoFilters) =>
+        get<RrvParticipacion>("dashboard/participacion", cleanGeo(f)),
 
     getGeografico: (nivel: string = "departamento", f: RrvGeoFilters = {}) =>
         get<RrvGeograficoResponse>("dashboard/geografico", {
             nivel,
-            departamento: f.departamento || undefined,
-            provincia: f.provincia || undefined,
-            municipio: f.municipio || undefined,
+            ...cleanGeo(f),
         }),
 
     getHeatmap: (metric: string = "participacion", nivel: string = "departamento") =>
