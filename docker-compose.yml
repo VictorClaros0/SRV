@@ -82,11 +82,11 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-8090}:8090"
     volumes:
       - ./data/logs:/app/data/logs
     environment:
-      - PORT=8080
+      - PORT=8090
       - DB_HOST=pgpool
       - DB_PORT=5432
       - DB_USER=${POSTGRESQL_USERNAME}
@@ -117,7 +117,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${FRONTEND_PORT:-3010}:80"
     depends_on:
       - api
     networks:
