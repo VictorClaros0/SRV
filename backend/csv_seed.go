@@ -51,31 +51,39 @@ func seedActas(db *gorm.DB) error {
 		adminID = &id
 	}
 
-	// Validar actas usando ActasImpresas: construir mapa codigoActa → codigoRecinto.
 	actasImpresasRows, err := readCSV(filepath.Join("data", "ActasImpresas.csv"))
 	if err != nil {
 		return fmt.Errorf("ActasImpresas.csv no encontrado: %w", err)
 	}
-	actaRecintoMap := make(map[int64]int64, len(actasImpresasRows))
-	for _, row := range actasImpresasRows {
-		if len(row) < 2 {
-			continue
-		}
-		codigoRecinto, err := strconv.ParseInt(strings.TrimSpace(row[0]), 10, 64)
-		if err != nil {
-			continue
-		}
-		codigoActa, err := strconv.ParseInt(strings.TrimSpace(row[1]), 10, 64)
-		if err != nil {
-			continue
-		}
-		actaRecintoMap[codigoActa] = codigoRecinto
-	}
 
 	inserted := 0
-	for codigoActa, codigoRecinto := range actaRecintoMap {
-		// Derivar número de mesa: últimos 3 dígitos del código de acta.
-		nroMesa := int(codigoActa % 1000)
+	for _, row := range actasImpresasRows {
+		if len(row) < 3 {
+			continue
+		}
+		codigoActaCSV, err := strconv.ParseInt(strings.TrimSpace(row[1]), 10, 64)
+		if err != nil {
+			continue
+		}
+		nroMesa, err := strconv.Atoi(strings.TrimSpace(row[2]))
+		if err != nil {
+			continue
+		}
+
+		var codigoActa, codigoRecinto int64
+		if codigoActaCSV%1000 == int64(nroMesa) {
+			// Patrón normal: CodigoActa = CodigoRecinto(10 dígitos) + NroMesa(3 dígitos)
+			codigoActa = codigoActaCSV
+			codigoRecinto, err = strconv.ParseInt(strings.TrimSpace(row[0]), 10, 64)
+			if err != nil {
+				continue
+			}
+		} else {
+			// Patrón especial: row[1] contiene el ID real del recinto (10 dígitos)
+			// y row[0] es solo el código territorial. Se construye CodigoActa único.
+			codigoRecinto = codigoActaCSV
+			codigoActa = codigoActaCSV*1000 + int64(nroMesa)
+		}
 
 		acta := models.Acta{
 			CodigoActa:    codigoActa,

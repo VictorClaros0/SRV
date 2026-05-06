@@ -22,6 +22,36 @@ func parseCampo(s string) int {
 	return n
 }
 
+func tieneNegativos(p1, p2, p3, p4, validos, nulos, blanco int) bool {
+	return p1 < 0 || p2 < 0 || p3 < 0 || p4 < 0 || validos < 0 || nulos < 0 || blanco < 0
+}
+
+func detalleNegativos(p1, p2, p3, p4, validos, nulos, blanco int) string {
+	var campos []string
+	if p1 < 0 {
+		campos = append(campos, "p1="+strconv.Itoa(p1))
+	}
+	if p2 < 0 {
+		campos = append(campos, "p2="+strconv.Itoa(p2))
+	}
+	if p3 < 0 {
+		campos = append(campos, "p3="+strconv.Itoa(p3))
+	}
+	if p4 < 0 {
+		campos = append(campos, "p4="+strconv.Itoa(p4))
+	}
+	if validos < 0 {
+		campos = append(campos, "votos_validos="+strconv.Itoa(validos))
+	}
+	if nulos < 0 {
+		campos = append(campos, "votos_nulos="+strconv.Itoa(nulos))
+	}
+	if blanco < 0 {
+		campos = append(campos, "votos_blanco="+strconv.Itoa(blanco))
+	}
+	return "valores negativos detectados: " + strings.Join(campos, ", ")
+}
+
 // ActaHandler CRUD actas y resumen.
 type ActaHandler struct {
 	DB *gorm.DB
@@ -170,9 +200,19 @@ func (h *ActaHandler) WebhookN8N(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "acta no encontrada"})
 		return
 	}
+	obs := strings.TrimSpace(payload.Observaciones)
 	estado := "transcrita"
-	if strings.TrimSpace(payload.Observaciones) != "" {
+	if obs != "" {
 		estado = "observada"
+	}
+	if tieneNegativos(payload.P1, payload.P2, payload.P3, payload.P4, payload.VotosValidos, payload.VotosNulos, payload.VotosBlanco) {
+		estado = "observada"
+		detalle := detalleNegativos(payload.P1, payload.P2, payload.P3, payload.P4, payload.VotosValidos, payload.VotosNulos, payload.VotosBlanco)
+		if obs == "" {
+			obs = detalle
+		} else {
+			obs = obs + " | " + detalle
+		}
 	}
 	updates := map[string]interface{}{
 		"estado":               estado,
@@ -185,7 +225,7 @@ func (h *ActaHandler) WebhookN8N(c *gin.Context) {
 		"votos_blanco":         payload.VotosBlanco,
 		"papeletas_anfora":     payload.PapeletasAnfora,
 		"papeletas_no_usadas":  payload.PapeletasNoUsadas,
-		"observaciones":        payload.Observaciones,
+		"observaciones":        obs,
 		"apertura_hora":        payload.AperturaHora,
 		"apertura_minutos":     payload.AperturaMinutos,
 		"cierre_hora":          payload.CierreHora,
@@ -228,20 +268,33 @@ func (h *ActaHandler) ProcesarTranscripciones(c *gin.Context) {
 			continue
 		}
 		obs := strings.TrimSpace(row[20])
+		p1, p2, p3, p4 := parseCampo(row[13]), parseCampo(row[14]), parseCampo(row[15]), parseCampo(row[16])
+		validos, blanco, nulos := parseCampo(row[17]), parseCampo(row[18]), parseCampo(row[19])
 		estado := "transcrita"
 		if obs != "" {
 			estado = "observada"
+		}
+		if tieneNegativos(p1, p2, p3, p4, validos, nulos, blanco) {
+			estado = "observada"
+			detalle := detalleNegativos(p1, p2, p3, p4, validos, nulos, blanco)
+			if obs == "" {
+				obs = detalle
+			} else {
+				obs = obs + " | " + detalle
+			}
+		}
+		if estado == "observada" {
 			observadas++
 		}
 		updates := map[string]interface{}{
 			"estado":               estado,
-			"p1":                   parseCampo(row[13]),
-			"p2":                   parseCampo(row[14]),
-			"p3":                   parseCampo(row[15]),
-			"p4":                   parseCampo(row[16]),
-			"votos_validos":        parseCampo(row[17]),
-			"votos_blanco":         parseCampo(row[18]),
-			"votos_nulos":          parseCampo(row[19]),
+			"p1":                   p1,
+			"p2":                   p2,
+			"p3":                   p3,
+			"p4":                   p4,
+			"votos_validos":        validos,
+			"votos_blanco":         blanco,
+			"votos_nulos":          nulos,
 			"papeletas_anfora":     parseCampo(row[11]),
 			"papeletas_no_usadas":  parseCampo(row[12]),
 			"observaciones":        obs,
@@ -250,7 +303,23 @@ func (h *ActaHandler) ProcesarTranscripciones(c *gin.Context) {
 			"cierre_hora":          parseCampo(row[24]),
 			"cierre_minutos":       parseCampo(row[25]),
 		}
-		if err := h.DB.Model(&models.Acta{}).Where("codigo_acta = ?", codigoActa).Updates(updates).Error; err != nil {
+		// Buscar el acta: primero por CodigoActa, si no se encuentra
+		// intentar por (CodigoRecinto, NroMesa) para los recintos especiales
+		// cuyo CodigoActa en Transcripciones es un placeholder (ej. 9040210000000).
+		var acta models.Acta
+		encontrado := h.DB.Where("codigo_acta = ?", codigoActa).First(&acta).Error == nil
+		if !encontrado {
+			codigoRecinto, errR := strconv.ParseInt(strings.TrimSpace(row[4]), 10, 64)
+			nroMesa := parseCampo(row[9])
+			if errR == nil && nroMesa > 0 {
+				encontrado = h.DB.Where("codigo_recinto = ? AND nro_mesa = ?", codigoRecinto, nroMesa).First(&acta).Error == nil
+			}
+		}
+		if !encontrado {
+			errors++
+			continue
+		}
+		if err := h.DB.Model(&acta).Updates(updates).Error; err != nil {
 			errors++
 		} else {
 			updated++
